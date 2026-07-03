@@ -1,0 +1,159 @@
+@import "tailwindcss";
+@import "../styles/tokens.css";
+
+/* ============================================================
+   База — v7: тёмное «живое поле», контент в стеклянных приборах
+   ============================================================ */
+html {
+  height: 100%;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  scroll-behavior: smooth;
+  scroll-padding-top: var(--header-h);
+}
+
+body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--color-substrate);
+  color: var(--color-ink);
+  font-family: var(--font-display);
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+}
+
+::selection { background: var(--color-signal); color: var(--color-ink); }
+
+*:focus-visible {
+  outline: 2px solid var(--color-signal-ink);
+  outline-offset: 3px;
+  border-radius: 1px;
+}
+
+/* Lenis */
+html.lenis, html.lenis body { height: auto; }
+.lenis.lenis-smooth { scroll-behavior: auto !important; }
+.lenis.lenis-smooth [data-lenis-prevent] { overscroll-behavior: contain; }
+.lenis.lenis-stopped { overflow: hidden; }
+
+/* ============================================================
+   Reveal-грамматика (контент собирается, не «фейдится»)
+   ============================================================ */
+html.js [data-reveal] { opacity: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  html.js [data-reveal] { opacity: 1 !important; transform: none !important; filter: none !important; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ============================================================
+   Стеклянные «приборы» над живой подложкой (v7)
+   ============================================================ */
+.instrument {
+  background: var(--color-bone-glass-panel);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+.tile-bone {
+  background: var(--color-bone-glass-tile);
+  -webkit-backdrop-filter: blur(7px);
+  backdrop-filter: blur(7px);
+}
+.tile-ink {
+  background: var(--color-ink-glass-tile);
+  -webkit-backdrop-filter: blur(7px);
+  backdrop-filter: blur(7px);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .instrument { background: var(--color-bone); }
+  .tile-bone { background: var(--color-bone-sunken); }
+  .tile-ink { background: var(--color-ink); }
+}
+
+/* Мост тёмная→светлая (из v7-полировки): полоса над первой светлой секцией */
+.instrument-bridge { position: relative; }
+.instrument-bridge::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  transform: translateY(-100%);
+  height: clamp(48px, 8vw, 120px);
+  pointer-events: none;
+  background: linear-gradient(to bottom, transparent, var(--color-bone-glass-panel));
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .instrument-bridge::before {
+    background: linear-gradient(to bottom, transparent, var(--color-bone));
+  }
+}
+
+/* ============================================================
+   Приборная панель (HUD/терминал/консьерж) — тёмное стекло + моно
+   ============================================================ */
+.instrument-panel {
+  background: var(--color-hud-bg);
+  color: var(--color-ink-fg);
+  border: var(--hairline) solid var(--color-hud-line);
+  font-family: var(--font-mono);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .instrument-panel { background: var(--color-ink); }
+}
+
+/* Сигнальная кнопка (v7-закон: зелёная заливка + ink-текст, 10.3:1) */
+.hanko {
+  background: var(--color-signal);
+  color: var(--color-ink);
+  border-radius: var(--radius-sm);
+  transition: background var(--dur-micro) var(--ease-standard);
+}
+.hanko:hover { background: var(--color-signal-bright); }
+
+/* Диагональная штриховка (превью-зоны на тёмных плитках) */
+.diagonal-hatch {
+  background-color: var(--color-ink-deep);
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgba(242, 240, 233, 0.05) 0,
+    rgba(242, 240, 233, 0.05) 1px,
+    transparent 1px,
+    transparent 11px
+  );
+}
+
+.signal-glow { box-shadow: 0 0 8px rgb(var(--color-signal-rgb) / 0.5); }
+
+/* Пульс живой точки */
+@keyframes slk-live-pulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+.live-pulse { animation: slk-live-pulse 2.4s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .live-pulse { animation: none !important; }
+}
+
+/* Окно ОС кейса: лёгкий scale-in */
+@keyframes case-window-in {
+  from { opacity: 0; transform: scale(0.965); }
+  to { opacity: 1; transform: scale(1); }
+}
+.case-window { animation: case-window-in var(--dur-short) var(--ease-ink); }
+
+/* Boot-оверлей: на substrate; гаснет как в v8 (no-JS / повторный заход / rm) */
+html:not(.js) .boot-overlay { display: none; }
+html[data-booted] .boot-overlay { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .boot-overlay { display: none !important; }
+}

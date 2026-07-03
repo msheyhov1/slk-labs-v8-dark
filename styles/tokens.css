@@ -1,0 +1,111 @@
+/* ============================================================
+   SLK-labs v8-dark — tokens.css (ЕДИНСТВЕННЫЙ ИСТОЧНИК ПРАВДЫ)
+   Скин v7 «живое поле»: тёмная подложка-substrate за всем сайтом,
+   контент в стеклянных «приборах», костяная база + сигнальный
+   зелёный ТОЛЬКО при взаимодействии/как свет.
+   Контраст-закон (v7, НЕ нарушать):
+   - signal #00E08A только против ink/тёмного (10.3:1) или как свет;
+   - зелёный текст/линии на светлом → signal-ink #0B7A4B (4.7:1);
+   - на зелёной кнопке текст — ink (10.3:1);
+   - hairline — только декор.
+   Фичи v8 (энсо, HUD, терминал, окна, realtime) — без изменений.
+   ============================================================ */
+
+@theme {
+  /* — Color (v7) — */
+  --color-bone: #F2F0E9;
+  --color-bone-sunken: #E9E6DD;
+  --color-ink: #14171A;
+  --color-ink-soft: #1B1F23;
+  --color-ink-2: #5A5F66;
+  --color-hairline: #DAD6CC;
+  --color-signal: #00E08A;        /* glow/accent on dark only */
+  --color-signal-bright: #19F29A; /* hover сигнальной кнопки */
+  --color-signal-ink: #0B7A4B;    /* readable green on light (~4.7:1) */
+
+  /* — Type (Geist, роли мапятся на next/font переменные) — */
+  --font-display: var(--font-v8-display), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-v8-mono), ui-monospace, "SF Mono", monospace;
+
+  --text-poster: clamp(3.5rem, 13vw, 11rem);   /* вордмарк героя (v7) */
+  --text-display: clamp(2.25rem, 5vw, 4.5rem); /* заголовки секций */
+  --text-h1: clamp(2.25rem, 5vw, 4.5rem);
+  --text-h2: clamp(1.75rem, 3.2vw, 2.75rem);
+  --text-h3: clamp(1.3rem, 2vw, 1.75rem);
+  --text-lead: clamp(1.15rem, 1.6vw, 1.4rem);
+  --text-body: 1.0625rem;
+  --text-small: 0.9375rem;
+  --text-label: 0.8125rem;
+
+  --tracking-poster: -0.02em;
+  --tracking-tight: -0.01em;
+  --tracking-label: 0.08em;
+
+  --leading-poster: 0.86;
+  --leading-tight: 1.1;
+  --leading-body: 1.6;
+  --leading-mono: 1.45;
+
+  /* — Radius — */
+  --radius-sm: 2px;
+  --radius-md: 6px;
+
+  /* — Spacing base — */
+  --spacing: 0.25rem;
+
+  /* — Easing (v7: сигнатурный expo.out «оседание») — */
+  --ease-ink: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-stamp: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-scene: cubic-bezier(0.83, 0, 0.17, 1);
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Производные/непокрытые Tailwind-неймспейсами токены (v7). */
+:root {
+  /* fg/линии против тёмной поверхности */
+  --color-ink-fg: #F2F0E9;
+  --color-ink-fg-2: rgba(242, 240, 233, 0.72);
+  --color-ink-fg-3: rgba(242, 240, 233, 0.55);
+  --color-ink-fg-4: rgba(242, 240, 233, 0.4);
+  --color-hairline-on-ink: rgba(218, 214, 204, 0.16);
+  --color-hairline-on-ink-soft: rgba(218, 214, 204, 0.14);
+  --color-hairline-on-ink-strong: rgba(218, 214, 204, 0.28);
+
+  /* v7: живое поле как подложка всей страницы */
+  --color-substrate: #0E1114;
+  --color-bone-glass: rgba(242, 240, 233, 0.72);
+  --color-bone-glass-panel: rgba(242, 240, 233, 0.9);
+  --color-bone-glass-tile: rgba(240, 237, 229, 0.82);
+  --color-ink-glass-tile: rgba(20, 24, 28, 0.45);
+  --color-hairline-glass: rgba(218, 214, 204, 0.22);
+  --color-ink-deep: #0F1215;
+  --color-signal-rgb: 0 224 138;
+  --color-danger: #E0655C; /* только ошибки терминала/статусов на тёмном */
+
+  /* приборный слой (HUD/терминал/boot) — тёмное стекло.
+     paper-fg-алиасы сохраняют имена, на которые ссылаются компоненты v8. */
+  --color-hud-bg: rgba(14, 17, 20, 0.92);
+  --color-hud-line: rgba(218, 214, 204, 0.16);
+  --color-paper-fg: var(--color-ink-fg);
+  --color-paper-fg-2: var(--color-ink-fg-2);
+  --color-paper-fg-3: var(--color-ink-fg-3);
+
+  /* layout (v7) */
+  --container-max: 88rem;
+  --container-text: 38rem;
+  --gutter: clamp(1.25rem, 4vw, 4rem);
+  --header-h: 64px;
+  --hairline: 1px;
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-heavy: 600;
+
+  /* motion (v7) */
+  --dur-micro: 0.15s;
+  --dur-short: 0.3s;
+  --dur-base: 0.6s;
+  --dur-slow: 0.9s;
+  --dur-hero: 1.4s;
+  --stagger: 0.06s;
+}
