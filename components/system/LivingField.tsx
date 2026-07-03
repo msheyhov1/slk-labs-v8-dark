@@ -8,10 +8,10 @@ import { registerField } from "@/lib/field-store";
 import { LivingFieldEngine } from "./engine/field";
 
 /**
- * Живое поле героя: сеть связей, собирающая энсо. Canvas абсолютный
- * внутри секции (не fixed) — IntersectionObserver честно паузит сцену
- * за пределами вьюпорта. pointer-events:none — скролл и клики свободны,
- * курсор движок слушает на window.
+ * Живое поле героя (v7): сеть узлов-связей дышит и тянется к курсору.
+ * Canvas абсолютный внутри секции — IntersectionObserver честно паузит
+ * сцену за пределами вьюпорта. pointer-events:none — скролл и клики
+ * свободны, курсор движок слушает на window.
  */
 export function LivingField() {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -22,11 +22,7 @@ export function LivingField() {
 
     let engine: LivingFieldEngine | null = null;
     try {
-      engine = new LivingFieldEngine(canvas, makeEnsoSeed(readGpu()), prefersReduced(), {
-        onEnsoDone: () => {
-          document.querySelector("[data-enso-note]")?.classList.remove("opacity-0");
-        },
-      });
+      engine = new LivingFieldEngine(canvas, makeEnsoSeed(readGpu()), prefersReduced());
     } catch {
       // WebGL2 недоступен — герой остаётся типографским (прогрессивное улучшение)
       return;

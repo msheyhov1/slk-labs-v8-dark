@@ -44,14 +44,6 @@ export function Hero() {
           {hero.payoff}
         </p>
 
-        {/* подпись к оттиску — появляется после сборки энсо */}
-        <p
-          data-enso-note
-          className="mt-6 max-w-[36ch] font-mono text-[12px] leading-[var(--leading-mono)] tracking-[0.04em] text-[var(--color-ink-fg-3)] opacity-0 transition-opacity duration-[var(--dur-base)]"
-        >
-          {hero.ensoNote}
-        </p>
-
         {/* стат-плитки v7 */}
         <dl className="mt-16 grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-px border border-[var(--color-hairline-on-ink-soft)] bg-[var(--color-hairline-on-ink-soft)]">
           {hero.specs.map((s) => (

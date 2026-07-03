@@ -50,7 +50,7 @@ export function Boot() {
       `renderer: webgl2 · gpu: ${gpu ?? "software"}`,
       `viewport: ${st.viewport.w}×${st.viewport.h} @${st.dpr}x · cores: ${st.cores ?? "?"}`,
       `ttfb: ${perf.ttfbMs ?? "—"} ms · document: ${perf.transferKb ?? "—"} KB`,
-      `enso: seeding stroke…`,
+      `network: seeding nodes…`,
       `ok`,
     ];
     boot.forEach((line, i) => {

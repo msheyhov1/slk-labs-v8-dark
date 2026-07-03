@@ -28,7 +28,7 @@ export async function runCommand(raw: string): Promise<TermLine[]> {
         out("  status            — живой статус систем студии"),
         out("  whoami            — ваша телеметрия (локально)"),
         out("  hire              — открыть контакт"),
-        out("  enso --reseed     — пересобрать оттиск"),
+        out("  enso --reseed     — пересобрать созвездие сети"),
         out("  clear             — очистить"),
       ];
 
@@ -85,7 +85,7 @@ export async function runCommand(raw: string): Promise<TermLine[]> {
     case "enso":
       if (args[0] === "--reseed") {
         return reseedEnso()
-          ? [out("оттиск пересобран · второго такого нет · exit 0")]
+          ? [out("созвездие пересобрано · exit 0")]
           : [err("живое поле не поднято (нет WebGL2) · exit 1")];
       }
       return [out("usage: enso --reseed")];
