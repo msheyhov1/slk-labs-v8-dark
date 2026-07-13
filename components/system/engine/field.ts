@@ -1,9 +1,12 @@
 // Живое поле v8-dark — чистый WebGL2, без three (бюджет JS).
-// «Нейро-мозг» Dala: облако частиц-огоньков в форме мозга — настоящее 3D
-// (медленное вращение, дыхание, глубина), связи-синапсы между соседями и
-// импульсы света, бегущие по ним ЦЕПОЧКАМИ — нейронные вспышки.
-// Спектр Dala: фиолет / синий / бирюза / магента / янтарь.
-// Плюс редкие ambient-частицы, дрейфующие по всему полю.
+// «Нейро-мозг»: плотное облако частиц-огоньков в форме мозга (вид сбоку,
+// лоб влево), кора лежит ИЗВИЛИНАМИ (гряды и борозды), между соседями —
+// связи-синапсы, по которым цепочками бегут импульсы света.
+// Ракурс зафиксирован (лёгкое покачивание) — силуэт мозга читается всегда.
+// Палитра сдержанная: бело-лавандовый свет + фиолет/синий, редкие искры.
+//
+// Взаимодействие: курсор зажигает и притягивает ближние частицы, движение
+// мыши рождает импульсы в ближних синапсах, клик — всплеск.
 //
 // Перф-дисциплина: связи считаются ОДИН раз при посеве (k-ближайших в 3D),
 // per-frame — только O(n) проекция; пауза на hidden/blur/вне вьюпорта,
@@ -11,32 +14,36 @@
 
 import { mulberry32 } from "@/lib/seed";
 
-// Спектр Dala (частицы = свет; аддитивное смешение на чёрном)
+// Палитра: приглушённый нейро-свет (аддитивное смешение на чёрном)
 const PALETTE: ReadonlyArray<readonly [number, number, number]> = [
-  [0.545, 0.361, 1.0],   // фиолет  #8B5CFF
-  [0.31, 0.553, 1.0],    // синий   #4F8DFF
-  [0.184, 0.851, 0.659], // бирюза  #2FD9A8
-  [1.0, 0.353, 0.82],    // магента #FF5AD1
-  [1.0, 0.722, 0.302],   // янтарь  #FFB84D
+  [0.79, 0.76, 1.0],     // бело-лавандовый — доминирует
+  [0.545, 0.361, 1.0],   // фиолет #8B5CFF
+  [0.31, 0.553, 1.0],    // синий  #4F8DFF
+  [0.184, 0.851, 0.659], // бирюза — редкая искра
+  [1.0, 0.722, 0.302],   // янтарь — редкая искра
 ];
-const PALETTE_W = [0.34, 0.22, 0.16, 0.14, 0.14] as const;
+const PALETTE_W = [0.52, 0.24, 0.14, 0.06, 0.04] as const;
 
 const CFG = {
-  brainDivisor: 1500, // px² на частицу мозга
-  maxBrain: 880,
-  maxBrainMobile: 420,
-  minBrain: 240,
-  ambientRatio: 0.15, // доля ambient-частиц от мозга
-  kNear: 2, // связей на частицу (k-ближайших)
-  maxLink3d: 0.26, // предел длины связи (3D-юниты мозга)
-  yawSpeed: 0.12, // рад/с — медленное вращение
-  pitchAmp: 0.07, // качание по тангажу
-  breathAmp: 0.018, // «дыхание» масштаба
-  pointerR: 0.2, // радиус влияния курсора (× min(w,h))
-  packetEvery: [0.3, 0.75] as const, // сек между импульсами
-  packetLife: 0.42, // сек на пролёт импульса по связи
-  chainP: 0.55, // вероятность продолжить цепочку в следующем синапсе
-  maxPackets: 22,
+  brainDivisor: 750, // px² на частицу мозга (плотно)
+  maxBrain: 1600,
+  maxBrainMobile: 700,
+  minBrain: 400,
+  ambientRatio: 0.08, // доля ambient-частиц от мозга
+  kNear: 3, // связей на частицу (k-ближайших) — видимая сеть
+  maxLink3d: 0.3, // предел длины связи (3D-юниты мозга)
+  yawBase: -0.12, // базовый ракурс (почти профиль)
+  yawAmp: 0.3, // покачивание вместо вращения — мозг читается всегда
+  yawSpeed: 0.22,
+  pitchAmp: 0.055,
+  breathAmp: 0.024, // «дыхание» масштаба
+  pointerR: 0.27, // радиус влияния курсора (× min(w,h))
+  pointerPull: 150, // сила тяги (px/с на пике)
+  moveSpawnPx: 46, // каждые N px пути мыши — импульс из ближнего синапса
+  packetEvery: [0.12, 0.35] as const, // сек между фоновыми импульсами
+  packetLife: 0.36, // сек на пролёт импульса по связи
+  chainP: 0.72, // вероятность продолжить цепочку в следующем синапсе
+  maxPackets: 42,
   lowFps: 45,
 };
 
@@ -78,7 +85,7 @@ export class LivingFieldEngine {
   private aCol = new Float32Array(0);
 
   private packets: Packet[] = [];
-  private nextPacket = 0.8;
+  private nextPacket = 0.6;
 
   private rand: () => number;
   private reduced: boolean;
@@ -104,6 +111,10 @@ export class LivingFieldEngine {
   private degraded = false;
 
   private pointer = { x: 0, y: 0, active: false };
+  private prevPtr = { x: 0, y: 0 };
+  private moveAcc = 0; // накопленный путь мыши → импульсы
+  private parX = 0; // параллакс центра мозга
+  private parY = 0;
   private disposed = false;
   private cleanupFns: Array<() => void> = [];
 
@@ -129,9 +140,14 @@ export class LivingFieldEngine {
 
     const onMove = (e: PointerEvent) => {
       const r = canvas.getBoundingClientRect();
+      const nx = e.clientX - r.left;
+      const ny = e.clientY - r.top;
+      if (this.pointer.active) {
+        this.moveAcc += Math.hypot(nx - this.pointer.x, ny - this.pointer.y);
+      }
       this.pointer = {
-        x: e.clientX - r.left,
-        y: e.clientY - r.top,
+        x: nx,
+        y: ny,
         active:
           e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom &&
           window.matchMedia("(hover: hover)").matches,
@@ -169,8 +185,7 @@ export class LivingFieldEngine {
     this.cleanupFns.push(() => io.disconnect());
 
     if (reduced) {
-      // статика: мозг замер в красивом ракурсе — один кадр
-      this.t = 0.6;
+      // статика: мозг замер в выразительном ракурсе — один кадр
       this.renderFrame(0);
     } else {
       this.start();
@@ -292,37 +307,70 @@ export class LivingFieldEngine {
     if (this.reduced) this.renderFrame(0);
   }
 
-  // ---------- форма мозга (3D) ----------
+  // ---------- форма мозга (3D, вид сбоку, лоб ВЛЕВО) ----------
 
-  /** Внутри ли точка «мозга» (вид сбоку, лоб влево): большой мозг +
-   *  мозжечок снизу-сзади + ствол; продольная щель сверху — деталь формы. */
-  private insideBrain(x: number, y: number, z: number): boolean {
-    const inCerebrum =
-      (x * x) / 1.0 + (y * y) / (0.74 * 0.74) + (z * z) / (0.7 * 0.7) <= 1 &&
-      !(y > 0.34 && x > 0.1); // срез снизу-сзади — место мозжечка
-    const cx = x - 0.5, cy = y - 0.44;
-    const inCereb =
-      (cx * cx) / (0.34 * 0.34) + (cy * cy) / (0.24 * 0.24) + (z * z) / (0.4 * 0.4) <= 1;
-    const sx = x - 0.16, sy = y - 0.62;
-    const inStem =
-      (sx * sx) / (0.13 * 0.13) + (sy * sy) / (0.24 * 0.24) + (z * z) / (0.13 * 0.13) <= 1;
-    // продольная щель между полушариями (видна при вращении)
-    const fissure = Math.abs(z) < 0.045 && y < -0.12 && inCerebrum;
-    return (inCerebrum || inCereb || inStem) && !fissure;
+  private inCerebrum(x: number, y: number, z: number): boolean {
+    const dx = x + 0.05, dy = y + 0.1;
+    return (dx * dx) / (0.95 * 0.95) + (dy * dy) / (0.62 * 0.62) + (z * z) / (0.6 * 0.6) <= 1;
+  }
+  private inTemporal(x: number, y: number, z: number): boolean {
+    const dx = x + 0.42, dy = y - 0.28;
+    return (dx * dx) / (0.48 * 0.48) + (dy * dy) / (0.3 * 0.3) + (z * z) / (0.5 * 0.5) <= 1;
+  }
+  private inCerebellum(x: number, y: number, z: number): boolean {
+    const dx = x - 0.52, dy = y - 0.38;
+    return (dx * dx) / (0.33 * 0.33) + (dy * dy) / (0.25 * 0.25) + (z * z) / (0.38 * 0.38) <= 1;
+  }
+  private inStem(x: number, y: number, z: number): boolean {
+    const dx = x - 0.26, dy = y - 0.6;
+    return (dx * dx) / (0.13 * 0.13) + (dy * dy) / (0.22 * 0.22) + (z * z) / (0.12 * 0.12) <= 1;
   }
 
-  /** Случайная точка внутри мозга; ~55% — у поверхности (кора светится). */
+  /** Внутри ли точка мозга: большой мозг + височная доля + мозжечок + ствол,
+   *  минус вырез между височной долей и мозжечком, минус продольная щель. */
+  private insideBrain(x: number, y: number, z: number): boolean {
+    const cere = this.inCerebrum(x, y, z) || this.inTemporal(x, y, z);
+    const parts = cere || this.inCerebellum(x, y, z) || this.inStem(x, y, z);
+    if (!parts) return false;
+    // вырез снизу: разделяет височную долю и мозжечок (узнаваемый профиль)
+    const nx = x - 0.08, ny = y - 0.56;
+    const notch =
+      (nx * nx) / (0.24 * 0.24) + (ny * ny) / (0.2 * 0.2) + (z * z) / (0.7 * 0.7) <= 1 &&
+      !this.inStem(x, y, z);
+    if (notch) return false;
+    // продольная щель между полушариями (сверху)
+    if (Math.abs(z) < 0.04 && y < -0.12 && cere) return false;
+    return true;
+  }
+
+  /** Извилины коры: волнистые гряды (принимаем точку, если она на гряде).
+   *  Борозды между грядами остаются тёмными — мозг «в морщинах». */
+  private onGyrus(x: number, y: number, z: number): boolean {
+    if (this.inCerebellum(x, y, z) && !this.inCerebrum(x, y, z)) {
+      // мозжечок: полосы тоньше и чаще
+      return Math.sin(16 * (y - 0.38) + 6 * (x - 0.52)) > -0.15;
+    }
+    // кора: волнистые гряды, изгиб зависит от x и глубины
+    return Math.sin(11 * y + 3.4 * Math.sin(2.3 * x) + 2.2 * z) > -0.2;
+  }
+
+  /** Случайная точка мозга: ~72% — на грядах коры (поверхность), остальное —
+   *  разреженное свечение в глубине. */
   private sampleBrainPoint(): [number, number, number] {
-    const shell = this.rand() < 0.55;
-    for (let tries = 0; tries < 60; tries++) {
+    const shell = this.rand() < 0.72;
+    for (let tries = 0; tries < 80; tries++) {
       const x = (this.rand() * 2 - 1) * 1.15;
       const y = (this.rand() * 2 - 1) * 1.0;
-      const z = (this.rand() * 2 - 1) * 0.85;
+      const z = (this.rand() * 2 - 1) * 0.75;
       if (!this.insideBrain(x, y, z)) continue;
-      if (shell && this.insideBrain(x / 0.84, y / 0.84, z / 0.84)) continue; // не «кора» — глубже
+      if (shell) {
+        // «кора»: узкая оболочка + попадание на гряду-извилину
+        if (this.insideBrain(x / 0.86, y / 0.86, z / 0.86)) continue;
+        if (!this.onGyrus(x, y, z)) continue;
+      }
       return [x, y, z];
     }
-    return [0, 0, 0];
+    return [0, -0.1, 0];
   }
 
   private pickColor(dst: Float32Array, at: number) {
@@ -357,8 +405,9 @@ export class LivingFieldEngine {
       this.home[i * 3 + 1] = p[1];
       this.home[i * 3 + 2] = p[2];
       this.ph[i] = this.rand() * Math.PI * 2;
-      this.sz[i] = (2.6 + this.rand() * 3.4) * this.dpr;
-      this.al[i] = 0.62 + this.rand() * 0.38;
+      const hub = this.rand() < 0.05; // редкие яркие «хабы»
+      this.sz[i] = (hub ? 4.6 : 2.0 + this.rand() * 2.4) * this.dpr;
+      this.al[i] = hub ? 0.95 : 0.55 + this.rand() * 0.4;
       this.pickColor(this.col, i * 3);
     }
     this.target.set(this.home);
@@ -375,8 +424,8 @@ export class LivingFieldEngine {
       this.aHome[i * 2] = this.rand();
       this.aHome[i * 2 + 1] = this.rand();
       this.aPh[i] = this.rand() * Math.PI * 2;
-      this.aSz[i] = (1.5 + this.rand() * 1.6) * this.dpr;
-      this.aAl[i] = 0.16 + this.rand() * 0.3;
+      this.aSz[i] = (1.4 + this.rand() * 1.5) * this.dpr;
+      this.aAl[i] = 0.12 + this.rand() * 0.24;
       this.pickColor(this.aCol, i * 3);
     }
 
@@ -392,9 +441,12 @@ export class LivingFieldEngine {
     this.adj = Array.from({ length: n }, () => []);
     const seen = new Set<number>();
     const maxD2 = CFG.maxLink3d * CFG.maxLink3d;
+    const K = CFG.kNear;
 
+    const bd: number[] = new Array(K);
+    const bi: number[] = new Array(K);
     for (let i = 0; i < n; i++) {
-      let b1 = -1, b2 = -1, d1 = Infinity, d2 = Infinity;
+      for (let k = 0; k < K; k++) { bd[k] = Infinity; bi[k] = -1; }
       const ix = pts[i * 3], iy = pts[i * 3 + 1], iz = pts[i * 3 + 2];
       for (let j = 0; j < n; j++) {
         if (j === i) continue;
@@ -402,19 +454,20 @@ export class LivingFieldEngine {
         const dy = iy - pts[j * 3 + 1];
         const dz = iz - pts[j * 3 + 2];
         const d = dx * dx + dy * dy + dz * dz;
-        if (d < d1) { d2 = d1; b2 = b1; d1 = d; b1 = j; }
-        else if (d < d2) { d2 = d; b2 = j; }
+        if (d >= bd[K - 1]) continue;
+        // вставка в топ-K
+        let k = K - 1;
+        while (k > 0 && bd[k - 1] > d) { bd[k] = bd[k - 1]; bi[k] = bi[k - 1]; k--; }
+        bd[k] = d; bi[k] = j;
       }
-      const cand = CFG.kNear >= 2 ? [b1, b2] : [b1];
-      const dist = [d1, d2];
-      for (let k = 0; k < cand.length; k++) {
-        const j = cand[k];
-        if (j < 0 || dist[k] > maxD2) continue;
+      for (let k = 0; k < K; k++) {
+        const j = bi[k];
+        if (j < 0 || bd[k] > maxD2) continue;
         const key = i < j ? i * 65536 + j : j * 65536 + i;
         if (seen.has(key)) continue;
         seen.add(key);
         this.links.push(i, j);
-        this.linkAl.push(0.14 + this.rand() * 0.1);
+        this.linkAl.push(0.2 + this.rand() * 0.14);
         this.adj[i].push(j);
         this.adj[j].push(i);
       }
@@ -426,15 +479,36 @@ export class LivingFieldEngine {
 
   // ---------- импульсы (нейронные вспышки) ----------
 
-  private spawnPacket() {
+  private spawnPacket(fromNode?: number) {
+    if (this.packets.length >= CFG.maxPackets) return;
+    if (fromNode !== undefined) {
+      const nexts = this.adj[fromNode];
+      if (!nexts || !nexts.length) return;
+      const nb = nexts[Math.floor(this.rand() * nexts.length)];
+      this.packets.push({ a: fromNode, b: nb, t: 0 });
+      return;
+    }
     const L = this.links.length / 2;
-    if (!L || this.packets.length >= CFG.maxPackets) return;
+    if (!L) return;
     const li = Math.floor(this.rand() * L);
     this.packets.push({ a: this.links[li * 2], b: this.links[li * 2 + 1], t: 0 });
   }
 
   private burst() {
-    for (let k = 0; k < 6; k++) this.spawnPacket();
+    for (let k = 0; k < 12; k++) this.spawnPacket();
+  }
+
+  /** Импульс из случайного узла рядом с курсором (нейро-отклик на движение). */
+  private spawnNearPointer(radiusPx: number) {
+    for (let tries = 0; tries < 50; tries++) {
+      const i = Math.floor(this.rand() * this.n);
+      const dx = this.proj[i * 3] - this.pointer.x;
+      const dy = this.proj[i * 3 + 1] - this.pointer.y;
+      if (dx * dx + dy * dy < radiusPx * radiusPx) {
+        this.spawnPacket(i);
+        return;
+      }
+    }
   }
 
   // ---------- цикл ----------
@@ -490,10 +564,21 @@ export class LivingFieldEngine {
     const m = Math.min(this.w, this.h);
     const mobile = this.w < 720;
 
-    // центр и радиус мозга: справа от текста (моб. — сверху по центру)
-    const cx = (mobile ? 0.5 : 0.72) * this.w;
-    const cy = (mobile ? 0.32 : 0.46) * this.h;
-    const R = (mobile ? 0.3 : 0.36) * m;
+    // центр и радиус мозга: справа от текста (моб. — сверху по центру).
+    // Лёгкий параллакс к курсору — сцена дышит вместе с рукой.
+    const cx0 = (mobile ? 0.5 : 0.72) * this.w;
+    const cy0 = (mobile ? 0.32 : 0.46) * this.h;
+    const R = (mobile ? 0.3 : 0.38) * m;
+    if (dt > 0) {
+      const tx = this.pointer.active ? (this.pointer.x - cx0) * 0.045 : 0;
+      const ty = this.pointer.active ? (this.pointer.y - cy0) * 0.045 : 0;
+      const lim = 22;
+      const cl = (v: number) => Math.max(-lim, Math.min(lim, v));
+      this.parX += (cl(tx) - this.parX) * Math.min(1, dt * 2.5);
+      this.parY += (cl(ty) - this.parY) * Math.min(1, dt * 2.5);
+    }
+    const cx = cx0 + this.parX;
+    const cy = cy0 + this.parY;
 
     // миграция домов при reseed
     if (dt > 0) {
@@ -503,10 +588,10 @@ export class LivingFieldEngine {
       }
     }
 
-    // вращение + дыхание
-    const yaw = this.t * CFG.yawSpeed;
-    const pitch = Math.sin(this.t * 0.17) * CFG.pitchAmp;
-    const breath = 1 + Math.sin(this.t * 0.55) * CFG.breathAmp;
+    // ракурс: профиль + мягкое покачивание (НЕ полное вращение) + дыхание
+    const yaw = CFG.yawBase + Math.sin(this.t * CFG.yawSpeed) * CFG.yawAmp;
+    const pitch = Math.sin(this.t * 0.31) * CFG.pitchAmp;
+    const breath = 1 + Math.sin(this.t * 0.7) * CFG.breathAmp;
     const cyw = Math.cos(yaw), syw = Math.sin(yaw);
     const cpt = Math.cos(pitch), spt = Math.sin(pitch);
 
@@ -517,17 +602,17 @@ export class LivingFieldEngine {
       const z1 = -hx * syw + hz * cyw;
       const y1 = hy * cpt - z1 * spt;
       const z2 = hy * spt + z1 * cpt;
-      const jit = Math.sin(this.t * 0.9 + this.ph[i]) * 0.007;
-      const persp = 1 + z2 * 0.16;
+      const jit = Math.sin(this.t * 1.1 + this.ph[i]) * 0.006;
+      const persp = 1 + z2 * 0.14;
       this.proj[i * 3] = cx + (x1 + jit) * R * breath * persp + this.off[i * 2];
       this.proj[i * 3 + 1] = cy + (y1 + jit * 0.8) * R * breath * persp + this.off[i * 2 + 1];
       this.proj[i * 3 + 2] = z2;
     }
 
-    // курсор: мягкая тяга ближних частиц (и пружина обратно)
+    // курсор: заметная тяга ближних частиц (и пружина обратно)
+    const Rp = CFG.pointerR * m;
     if (dt > 0) {
-      const decay = Math.max(0, 1 - 2.6 * dt);
-      const Rp = CFG.pointerR * m;
+      const decay = Math.max(0, 1 - 3.0 * dt);
       for (let i = 0; i < this.n; i++) {
         let ox = this.off[i * 2] * decay;
         let oy = this.off[i * 2 + 1] * decay;
@@ -536,7 +621,7 @@ export class LivingFieldEngine {
           const dy = this.pointer.y - this.proj[i * 3 + 1];
           const d = Math.hypot(dx, dy);
           if (d < Rp && d > 1) {
-            const f = (1 - d / Rp) * 55 * dt;
+            const f = (1 - d / Rp) * CFG.pointerPull * dt;
             ox += (dx / d) * f;
             oy += (dy / d) * f;
           }
@@ -544,10 +629,14 @@ export class LivingFieldEngine {
         this.off[i * 2] = ox;
         this.off[i * 2 + 1] = oy;
       }
-    }
 
-    // импульсы: спавн + цепочки по синапсам
-    if (dt > 0) {
+      // движение мыши рождает импульсы в ближних синапсах
+      if (this.pointer.active && this.moveAcc >= CFG.moveSpawnPx) {
+        this.moveAcc = 0;
+        this.spawnNearPointer(Rp * 0.7);
+      }
+
+      // фоновые импульсы: спавн + цепочки по синапсам
       this.nextPacket -= dt;
       if (this.nextPacket <= 0) {
         this.spawnPacket();
@@ -583,7 +672,7 @@ export class LivingFieldEngine {
     for (let li = 0; li < L; li++) {
       const a = this.links[li * 2], b = this.links[li * 2 + 1];
       const za = this.proj[a * 3 + 2], zb = this.proj[b * 3 + 2];
-      const df = 0.45 + 0.55 * ((za + zb) * 0.25 + 0.5); // глубина пары
+      const df = 0.5 + 0.5 * ((za + zb) * 0.25 + 0.5); // глубина пары
       const alpha = this.linkAl[li] * df;
       this.linArr[o++] = this.proj[a * 3]; this.linArr[o++] = this.proj[a * 3 + 1];
       this.linArr[o++] = alpha;
@@ -595,14 +684,14 @@ export class LivingFieldEngine {
     // — импульсы света: яркий короткий сегмент, бегущий по синапсу —
     for (const p of this.packets) {
       const a = p.a, b = p.b;
-      const t0 = Math.max(0, p.t - 0.2);
+      const t0 = Math.max(0, p.t - 0.22);
       const ax = this.proj[a * 3], ay = this.proj[a * 3 + 1];
       const bx = this.proj[b * 3], by = this.proj[b * 3 + 1];
       const x0 = ax + (bx - ax) * t0, y0 = ay + (by - ay) * t0;
       const x1 = ax + (bx - ax) * p.t, y1 = ay + (by - ay) * p.t;
-      const al = Math.sin(p.t * Math.PI) * 0.95;
-      const br = 1.45; // свет ярче собственного цвета узла
-      this.linArr[o++] = x0; this.linArr[o++] = y0; this.linArr[o++] = al * 0.6;
+      const al = Math.sin(p.t * Math.PI);
+      const br = 1.6; // свет ярче собственного цвета узла
+      this.linArr[o++] = x0; this.linArr[o++] = y0; this.linArr[o++] = al * 0.65;
       this.linArr[o++] = Math.min(1, this.col[a * 3] * br); this.linArr[o++] = Math.min(1, this.col[a * 3 + 1] * br); this.linArr[o++] = Math.min(1, this.col[a * 3 + 2] * br);
       this.linArr[o++] = x1; this.linArr[o++] = y1; this.linArr[o++] = al;
       this.linArr[o++] = Math.min(1, this.col[b * 3] * br); this.linArr[o++] = Math.min(1, this.col[b * 3 + 1] * br); this.linArr[o++] = Math.min(1, this.col[b * 3 + 2] * br);
@@ -619,14 +708,23 @@ export class LivingFieldEngine {
 
     // — частицы мозга + ambient —
     let q = 0;
+    const pActive = this.pointer.active;
     for (let i = 0; i < this.n; i++) {
       const depth = this.proj[i * 3 + 2];
       const df = 0.58 + 0.42 * (depth * 0.5 + 0.5); // дальние тусклее/меньше
-      const tw = 0.82 + 0.18 * Math.sin(this.t * 1.4 + this.ph[i] * 2); // мерцание
+      const tw = 0.8 + 0.2 * Math.sin(this.t * 1.7 + this.ph[i] * 2); // мерцание
+      // курсор «зажигает» ближние частицы
+      let ex = 0;
+      if (pActive) {
+        const dx = this.proj[i * 3] - this.pointer.x;
+        const dy = this.proj[i * 3 + 1] - this.pointer.y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 < Rp * Rp) ex = 1 - Math.sqrt(d2) / Rp;
+      }
       this.ptsArr[q++] = this.proj[i * 3];
       this.ptsArr[q++] = this.proj[i * 3 + 1];
-      this.ptsArr[q++] = this.sz[i] * df;
-      this.ptsArr[q++] = this.al[i] * df * tw;
+      this.ptsArr[q++] = this.sz[i] * df * (1 + ex * 0.5);
+      this.ptsArr[q++] = Math.min(1, this.al[i] * df * tw * (1 + ex * 1.1));
       this.ptsArr[q++] = this.col[i * 3];
       this.ptsArr[q++] = this.col[i * 3 + 1];
       this.ptsArr[q++] = this.col[i * 3 + 2];
