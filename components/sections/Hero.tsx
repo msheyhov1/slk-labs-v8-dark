@@ -15,18 +15,19 @@ export function Hero() {
       aria-label="SLK-labs — студия разработки и автоматизации"
       className="relative flex min-h-[100svh] items-center overflow-hidden text-[var(--color-bone-white)]"
     >
-      {/* тихое iris-свечение поля */}
+      {/* Нейро-мозг Dala: облако частиц-огоньков + синапсы (WebGL2).
+          Канвас непрозрачный (чёрный + аддитивный свет) — свечение кладём ПОВЕРХ. */}
+      <LivingField />
+
+      {/* тихий фиолетово-синий ореол за мозгом (спектр Dala) */}
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0"
         style={{
           background:
-            "radial-gradient(120% 90% at 72% 34%, rgb(var(--color-signal-rgb) / 0.10), transparent 62%)",
+            "radial-gradient(80% 70% at 72% 46%, rgba(128,82,255,0.09), rgba(79,141,255,0.04) 45%, transparent 68%)",
         }}
       />
-
-      {/* Живая система: сеть-констелляция, собирающая знак (WebGL2) */}
-      <LivingField />
 
       <Container className="relative z-[2] py-[120px] pt-[136px]">
         <div className="mb-12 flex items-center justify-between gap-6">
