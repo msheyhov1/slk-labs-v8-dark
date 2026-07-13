@@ -5,55 +5,75 @@ import { LiveBadge } from "@/components/system/LiveBadge";
 import { hero } from "@/lib/content/hero";
 
 export function Hero() {
-  // v7: герой прозрачен над тёмным живым полем; текст светлый (ink-fg).
+  // Dala: герой плывёт на чистом void. Огромный вордмарк весом 400,
+  // янтарный ярлык-эмфаза, ультралайт-пэйофф, одна фиолетовая пилюля-действие.
+  // Поле-констелляция (WebGL) — фирменный жест бренда за текстом.
   return (
     <section
       id="top"
       data-surface="dark"
       aria-label="SLK-labs — студия разработки и автоматизации"
-      className="relative flex min-h-[100svh] items-center overflow-hidden text-[var(--color-ink-fg)]"
+      className="relative flex min-h-[100svh] items-center overflow-hidden text-[var(--color-bone-white)]"
     >
-      {/* тихое зелёное свечение поля (v7) — вместо солнца Ink·Dawn */}
+      {/* тихое iris-свечение поля */}
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0"
         style={{
           background:
-            "radial-gradient(120% 90% at 70% 30%, rgb(var(--color-signal-rgb) / 0.06), transparent 60%)",
+            "radial-gradient(120% 90% at 72% 34%, rgb(var(--color-signal-rgb) / 0.10), transparent 62%)",
         }}
       />
 
-      {/* Живая система: сеть связей, собирающая энсо (WebGL2) */}
+      {/* Живая система: сеть-констелляция, собирающая знак (WebGL2) */}
       <LivingField />
 
       <Container className="relative z-[2] py-[120px] pt-[136px]">
-        <div className="mb-12 flex items-center justify-between gap-6 border-b border-[var(--color-hairline-on-ink)] pb-7">
-          <MonoLabel tone="fg">{hero.eyebrow}</MonoLabel>
+        <div className="mb-12 flex items-center justify-between gap-6">
+          <MonoLabel tone="signal">{hero.eyebrow}</MonoLabel>
           <LiveBadge />
         </div>
 
-        {/* Вордмарк v7: SLK гротеск + -labs моно зелёный */}
-        <h1 className="m-0 flex items-end leading-[var(--leading-poster)] tracking-poster">
-          <span className="font-semibold text-poster">SLK</span>
-          <span className="ml-[0.04em] pb-[0.12em] font-mono text-signal text-[clamp(1.1rem,3.6vw,3rem)] tracking-tight">
+        {/* Вордмарк Dala: SLK белый вес 400 + -labs фиолетовый (бренд-акцент) */}
+        <h1 className="m-0 flex items-end font-normal leading-[var(--leading-poster)] tracking-poster">
+          <span className="text-poster">SLK</span>
+          <span className="ml-[0.03em] pb-[0.14em] text-[var(--color-iris)] text-[clamp(1.4rem,4vw,3.4rem)] tracking-tight">
             -labs
           </span>
         </h1>
 
-        <p className="mt-10 max-w-[40rem] text-[clamp(1.3rem,2.4vw,2.1rem)] font-medium leading-tight tracking-tight text-[var(--color-ink-fg-2)]">
+        <p className="mt-9 max-w-[38rem] text-[clamp(1.35rem,2.6vw,2.25rem)] font-extralight leading-[1.12] tracking-tight text-[var(--color-bone-white)]">
           {hero.payoff}
         </p>
 
-        {/* стат-плитки v7 */}
-        <dl className="mt-16 grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-px border border-[var(--color-hairline-on-ink-soft)] bg-[var(--color-hairline-on-ink-soft)]">
+        {/* Единственная заливка-действие в Dala — фиолетовая пилюля */}
+        <div className="mt-11 flex flex-wrap items-center gap-x-8 gap-y-4">
+          <a
+            href="#contact"
+            className="hanko inline-flex items-center gap-2 px-7 py-[14px] text-label font-semibold uppercase tracking-label no-underline"
+          >
+            Обсудить проект
+          </a>
+          <a
+            href="#works"
+            className="text-label font-medium uppercase tracking-label text-[var(--color-ash)] no-underline transition-colors duration-[var(--dur-micro)] hover:text-[var(--color-bone-white)]"
+          >
+            Смотреть работы →
+          </a>
+        </div>
+
+        {/* Стат-строка Dala: без карточек и рамок — плывёт на void */}
+        <dl className="mt-16 flex flex-wrap gap-x-14 gap-y-8">
           {hero.specs.map((s) => (
-            <div key={s.label} className="m-0 bg-ink px-[18px] py-4">
-              <dt className="font-mono text-[11px] uppercase tracking-label text-[var(--color-ink-fg-3)]">
+            <div key={s.label} className="m-0">
+              <dt className="text-[12px] font-semibold uppercase tracking-label text-[var(--color-saffron)]">
                 {s.label}
               </dt>
               <dd
-                className={`m-0 mt-[6px] font-mono text-[14px] ${
-                  "signal" in s && s.signal ? "text-signal" : "text-[var(--color-ink-fg)]"
+                className={`m-0 mt-2 text-[15px] font-normal ${
+                  "signal" in s && s.signal
+                    ? "text-[var(--color-iris)]"
+                    : "text-[var(--color-bone-white)]"
                 }`}
               >
                 {s.value}
@@ -63,7 +83,7 @@ export function Hero() {
         </dl>
       </Container>
 
-      <span className="absolute bottom-7 left-[var(--gutter)] z-[2] font-mono text-[12px] uppercase tracking-label text-[var(--color-ink-fg-3)]">
+      <span className="absolute bottom-7 left-[var(--gutter)] z-[2] text-[12px] font-semibold uppercase tracking-label text-[var(--color-ash)]">
         {hero.scrollCue}
       </span>
     </section>

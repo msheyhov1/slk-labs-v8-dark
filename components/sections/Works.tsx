@@ -18,11 +18,11 @@ export function Works() {
             <MonoLabel tone="signal">01 — Работы</MonoLabel>
             <h2
               id="works-title"
-              className="mt-4 max-w-[16ch] text-display font-semibold leading-[var(--leading-tight)] tracking-poster"
+              className="mt-5 max-w-[16ch] text-display font-normal leading-[var(--leading-tight)] tracking-poster"
             >
               Запущенные системы
             </h2>
-            <p className="mt-5 max-w-[44ch] text-lead text-[var(--color-ink-fg-3)]">
+            <p className="mt-6 max-w-[44ch] text-lead font-extralight text-[var(--color-silver)]">
               Работа не описана — работа открыта. Кейсы живые: скролльте и кликайте прямо в окне.
             </p>
           </div>

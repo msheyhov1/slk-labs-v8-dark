@@ -70,10 +70,10 @@ export function KineticManifesto({
           <p
             key={i}
             data-line
-            className={`m-0 text-h2 font-semibold leading-[1.16] tracking-tight ${
+            className={`m-0 text-h2 font-normal leading-[1.16] tracking-tight ${
               line === "Мы строим не так." || line === "Скучная в основе. Живая на поверхности."
-                ? "mt-10 text-ink"
-                : "mt-3 text-ink-2"
+                ? "mt-10 text-[var(--color-bone-white)]"
+                : "mt-3 text-[var(--color-ash)]"
             }`}
           >
             {line}
@@ -81,7 +81,7 @@ export function KineticManifesto({
         ))}
         <p
           data-payoff
-          className="mt-14 inline-block text-h2 font-semibold leading-[1.16] tracking-tight text-signal-ink"
+          className="mt-14 inline-block text-h2 font-normal leading-[1.16] tracking-tight text-[var(--color-saffron)]"
         >
           {payoff}
         </p>

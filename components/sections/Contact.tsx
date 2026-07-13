@@ -18,13 +18,13 @@ export function Contact({ statusSlot }: { statusSlot?: React.ReactNode }) {
             <MonoLabel tone="signal-ink">{contact.index}</MonoLabel>
             <h2
               id="contact-title"
-              className="mt-4 text-[clamp(2.2rem,5vw,4.2rem)] font-semibold leading-[1.02] tracking-poster text-ink"
+              className="mt-5 text-[clamp(2.5rem,5.5vw,4.875rem)] font-normal leading-[1.02] tracking-poster text-[var(--color-bone-white)]"
             >
               {contact.titleLines[0]}
               <br />
               {contact.titleLines[1]}
             </h2>
-            <p className="mt-6 max-w-[34ch] text-lead leading-body text-ink-2">
+            <p className="mt-6 max-w-[34ch] text-lead font-extralight leading-body text-[var(--color-silver)]">
               {contact.lead}
             </p>
           </div>
@@ -40,11 +40,11 @@ export function Contact({ statusSlot }: { statusSlot?: React.ReactNode }) {
         {statusSlot}
 
         <div className="flex flex-wrap items-center justify-between gap-4 pt-7">
-          <div className="flex items-center gap-[10px] font-mono text-[12px] tracking-[0.06em] text-ink-2">
-            <span aria-hidden className="live-pulse h-2 w-2 rounded-[1px] bg-signal-ink" />
+          <div className="flex items-center gap-[10px] font-mono text-[12px] tracking-[0.06em] text-[var(--color-ash)]">
+            <span aria-hidden className="live-pulse h-2 w-2 rounded-full bg-[var(--color-iris)]" />
             <span>{contact.note}</span>
           </div>
-          <span className="font-mono text-[12px] tracking-[0.06em] text-ink-2">
+          <span className="font-mono text-[12px] tracking-[0.06em] text-[var(--color-ash)]">
             © {contact.year}
           </span>
         </div>

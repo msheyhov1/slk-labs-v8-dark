@@ -48,7 +48,7 @@ export function WorksGrid({ cases }: { cases: Case[] }) {
               </div>
 
               <div className="px-[clamp(20px,2.4vw,28px)] pb-7 pt-6">
-                <h3 className="m-0 text-[1.5rem] font-semibold tracking-tight text-[var(--color-ink-fg)]">
+                <h3 className="m-0 text-[1.5rem] font-normal tracking-tight text-[var(--color-ink-fg)]">
                   {c.title}
                 </h3>
                 <p className="mt-3 max-w-[40ch] text-small leading-body text-[var(--color-ink-fg-3)]">

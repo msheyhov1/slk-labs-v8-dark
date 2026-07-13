@@ -1,19 +1,20 @@
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Inter, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import SmoothScroll from "@/components/SmoothScroll";
 import { Header } from "@/components/Header";
 import { SystemLayer } from "@/components/system/SystemLayer";
 import { site, contacts } from "@/lib/site";
 
-// Постерный гротеск + издательский моно (оба с кириллицей).
-// Archivo/Space Mono из токен-дока кириллицы не имеют — финальная пара
-// запирается в Claude Design, замена здесь одной строкой.
-const display = Geist({
+// Dala: единый гротеск во всех контекстах. PPNeueMontreal запирается в
+// Claude Design — субститут Inter (с кириллицей). Вес 200 (ультралайт тело) —
+// фирменная черта; 400 — регуляр заголовков (иерархия масштабом, не весом).
+// Моно (Geist_Mono, с кириллицей) остаётся ТОЛЬКО для терминала/HUD/boot.
+const display = Inter({
   variable: "--font-v8-display",
   subsets: ["latin", "cyrillic"],
-  weight: ["400", "500", "600"],
+  weight: ["200", "400", "500", "600", "700"],
   display: "swap",
 });
 
@@ -71,7 +72,7 @@ export default function RootLayout({
         />
         <a
           href="#content"
-          className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-sm focus:bg-ink focus:px-4 focus:py-3 focus:font-mono focus:text-label focus:text-[var(--color-paper-fg)]"
+          className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-full focus:bg-[var(--color-iris)] focus:px-5 focus:py-3 focus:text-label focus:font-medium focus:text-[var(--color-bone-white)]"
         >
           Перейти к содержанию
         </a>

@@ -1,107 +1,126 @@
 /* ============================================================
    SLK-labs v8-dark — tokens.css (ЕДИНСТВЕННЫЙ ИСТОЧНИК ПРАВДЫ)
-   Скин v7 «живое поле»: тёмная подложка-substrate за всем сайтом,
-   контент в стеклянных «приборах», костяная база + сигнальный
-   зелёный ТОЛЬКО при взаимодействии/как свет.
-   Контраст-закон (v7, НЕ нарушать):
-   - signal #00E08A только против ink/тёмного (10.3:1) или как свет;
-   - зелёный текст/линии на светлом → signal-ink #0B7A4B (4.7:1);
-   - на зелёной кнопке текст — ink (10.3:1);
-   - hairline — только декор.
-   Фичи v8 (энсо, HUD, терминал, окна, realtime) — без изменений.
+   Скин «Dala»: чистый чёрный void за всем сайтом, контент плывёт
+   в пустоте — без панелей, карточек, теней и рамок. Иерархия —
+   масштабом и цветом, не весом шрифта.
+   Закон Dala (НЕ нарушать):
+   - фон везде #000000 (void), НИКОГДА тёмно-серые панели/карточки;
+   - заголовки — вес 400 при огромном кегле (78–113px) + отрицательный трекинг;
+   - тело — вес 200 (ультралайт), фирменная «воздушность»;
+   - #8052ff (electric-iris) — ТОЛЬКО заливка действия/бренд-акцент;
+   - #ffb829 (saffron) — надписи-ярлыки над телом и акцент-эмфаза;
+   - никаких градиентов в UI (только в лого и поле-констелляции).
+   Легаси-имена токенов (ink/bone/signal/hairline) сохранены как алиасы
+   и перемаплены на палитру Dala — компоненты продолжают работать.
    ============================================================ */
 
 @theme {
-  /* — Color (v7) — */
-  --color-bone: #F2F0E9;
-  --color-bone-sunken: #E9E6DD;
-  --color-ink: #14171A;
-  --color-ink-soft: #1B1F23;
-  --color-ink-2: #5A5F66;
-  --color-hairline: #DAD6CC;
-  --color-signal: #00E08A;        /* glow/accent on dark only */
-  --color-signal-bright: #19F29A; /* hover сигнальной кнопки */
-  --color-signal-ink: #0B7A4B;    /* readable green on light (~4.7:1) */
+  /* — Палитра Dala — */
+  --color-void: #000000;         /* холст страницы, все секции */
+  --color-bone-white: #ffffff;   /* заголовки, основной текст */
+  --color-ash: #9a9a9a;          /* приглушённый текст, nav, вторичное */
+  --color-silver: #bdbdbd;       /* третичный текст, подписи */
+  --color-iris: #8052ff;         /* единственное действие/бренд */
+  --color-iris-bright: #936bff;  /* hover фиолетовой кнопки */
+  --color-saffron: #ffb829;      /* ярлыки-эмфаза, акцент-пунктуация */
+  --color-verdant: #15846e;      /* глубокий стоп бренд-градиента (лого/поле) */
 
-  /* — Type (Geist, роли мапятся на next/font переменные) — */
-  --font-display: var(--font-v8-display), ui-sans-serif, system-ui, sans-serif;
+  /* — Легаси-алиасы → значения Dala (чтобы утилиты рендерились верно) — */
+  --color-bone: #0a0a0a;         /* bg-bone* → почти-void подложка */
+  --color-bone-sunken: #141414;  /* лёгкая приподнятость на void */
+  --color-ink: #ffffff;          /* text-ink → белый primary */
+  --color-ink-soft: #f2f2f2;
+  --color-ink-2: #9a9a9a;        /* text-ink-2 → ash secondary */
+  --color-hairline: rgba(255, 255, 255, 0.08); /* Dala: почти-невидимые линии */
+  --color-signal: #8052ff;       /* signal → iris (акцент/действие) */
+  --color-signal-bright: #936bff;
+  --color-signal-ink: #ffb829;   /* signal-ink → saffron (ярлыки/эмфаза) */
+
+  /* — Type (Inter как замена PPNeueMontreal; роли → next/font переменные) — */
+  --font-display: var(--font-v8-display), "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-mono: var(--font-v8-mono), ui-monospace, "SF Mono", monospace;
 
-  --text-poster: clamp(3.5rem, 13vw, 11rem);   /* вордмарк героя (v7) */
-  --text-display: clamp(2.25rem, 5vw, 4.5rem); /* заголовки секций */
-  --text-h1: clamp(2.25rem, 5vw, 4.5rem);
-  --text-h2: clamp(1.75rem, 3.2vw, 2.75rem);
-  --text-h3: clamp(1.3rem, 2vw, 1.75rem);
-  --text-lead: clamp(1.15rem, 1.6vw, 1.4rem);
-  --text-body: 1.0625rem;
+  /* Dala-шкала: масштаб делает иерархию, вес — нет.
+     clamp() держит те же роли отзывчивыми; максимумы = кегли Dala. */
+  --text-poster: clamp(3.75rem, 11vw, 7.0625rem);  /* 113px — дисплей героя */
+  --text-display: clamp(2.75rem, 6vw, 4.875rem);   /* 78px — заголовки секций */
+  --text-h1: clamp(2.75rem, 6vw, 4.875rem);
+  --text-h2: clamp(2rem, 4vw, 3rem);               /* 48px */
+  --text-h3: clamp(1.5rem, 2.4vw, 1.6875rem);      /* 27px */
+  --text-lead: clamp(1.125rem, 1.6vw, 1.3125rem);
+  --text-body: 1.125rem;                            /* 18px — тело Dala */
   --text-small: 0.9375rem;
-  --text-label: 0.8125rem;
+  --text-label: 0.875rem;                           /* 14px — nav/ярлык */
 
-  --tracking-poster: -0.02em;
-  --tracking-tight: -0.01em;
-  --tracking-label: 0.08em;
+  /* Отрицательный трекинг Dala (-0.04em на дисплее) */
+  --tracking-poster: -0.04em;
+  --tracking-tight: -0.02em;
+  --tracking-label: 0.025em;
 
-  --leading-poster: 0.86;
+  --leading-poster: 1.05;
   --leading-tight: 1.1;
-  --leading-body: 1.6;
+  --leading-body: 1.5;
   --leading-mono: 1.45;
 
-  /* — Radius — */
-  --radius-sm: 2px;
-  --radius-md: 6px;
+  /* — Radius (Dala: 24px для кнопок/карт/nav; пилюли 9999) — */
+  --radius-sm: 24px;
+  --radius-md: 24px;
 
-  /* — Spacing base — */
-  --spacing: 0.25rem;
+  /* — Spacing base (Dala: 6px) — */
+  --spacing: 0.375rem;
 
-  /* — Easing (v7: сигнатурный expo.out «оседание») — */
+  /* — Easing — */
   --ease-ink: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-stamp: cubic-bezier(0.34, 1.56, 0.64, 1);
   --ease-scene: cubic-bezier(0.83, 0, 0.17, 1);
   --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Производные/непокрытые Tailwind-неймспейсами токены (v7). */
+/* Производные/непокрытые Tailwind-неймспейсами токены. */
 :root {
-  /* fg/линии против тёмной поверхности */
-  --color-ink-fg: #F2F0E9;
-  --color-ink-fg-2: rgba(242, 240, 233, 0.72);
-  --color-ink-fg-3: rgba(242, 240, 233, 0.55);
-  --color-ink-fg-4: rgba(242, 240, 233, 0.4);
-  --color-hairline-on-ink: rgba(218, 214, 204, 0.16);
-  --color-hairline-on-ink-soft: rgba(218, 214, 204, 0.14);
-  --color-hairline-on-ink-strong: rgba(218, 214, 204, 0.28);
+  /* fg/линии против void (в Dala всё на чёрном — fg = основной текст) */
+  --color-ink-fg: #ffffff;
+  --color-ink-fg-2: rgba(255, 255, 255, 0.72);
+  --color-ink-fg-3: #9a9a9a;                       /* ash */
+  --color-ink-fg-4: rgba(255, 255, 255, 0.4);
+  --color-hairline-on-ink: rgba(255, 255, 255, 0.1);
+  --color-hairline-on-ink-soft: rgba(255, 255, 255, 0.07);
+  --color-hairline-on-ink-strong: rgba(255, 255, 255, 0.18);
 
-  /* v7: живое поле как подложка всей страницы */
-  --color-substrate: #0E1114;
-  --color-bone-glass: rgba(242, 240, 233, 0.72);
-  --color-bone-glass-panel: rgba(242, 240, 233, 0.9);
-  --color-bone-glass-tile: rgba(240, 237, 229, 0.82);
-  --color-ink-glass-tile: rgba(20, 24, 28, 0.45);
-  --color-hairline-glass: rgba(218, 214, 204, 0.22);
-  --color-ink-deep: #0F1215;
-  --color-signal-rgb: 0 224 138;
-  --color-danger: #E0655C; /* только ошибки терминала/статусов на тёмном */
+  /* void как подложка всей страницы */
+  --color-substrate: #000000;
+  --color-bone-glass: rgba(255, 255, 255, 0.04);
+  --color-bone-glass-panel: transparent;           /* Dala: приборы плывут, без панели */
+  --color-bone-glass-tile: rgba(255, 255, 255, 0.03);
+  --color-ink-glass-tile: rgba(255, 255, 255, 0.03);
+  --color-hairline-glass: rgba(255, 255, 255, 0.08);
+  --color-ink-deep: #050505;
+  --color-signal-rgb: 128 82 255;                  /* iris */
+  --color-saffron-rgb: 255 184 41;
+  --color-danger: #e0655c;
 
-  /* приборный слой (HUD/терминал/boot) — тёмное стекло.
-     paper-fg-алиасы сохраняют имена, на которые ссылаются компоненты v8. */
-  --color-hud-bg: rgba(14, 17, 20, 0.92);
-  --color-hud-line: rgba(218, 214, 204, 0.16);
-  --color-paper-fg: var(--color-ink-fg);
-  --color-paper-fg-2: var(--color-ink-fg-2);
-  --color-paper-fg-3: var(--color-ink-fg-3);
+  /* приборный слой (HUD/терминал/boot) — тёмное стекло на void, iris-акцент */
+  --color-hud-bg: rgba(10, 10, 12, 0.86);
+  --color-hud-line: rgba(255, 255, 255, 0.1);
+  --color-paper-fg: #ffffff;
+  --color-paper-fg-2: rgba(255, 255, 255, 0.72);
+  --color-paper-fg-3: #9a9a9a;
 
-  /* layout (v7) */
-  --container-max: 88rem;
-  --container-text: 38rem;
+  /* layout */
+  --container-max: 80rem;                           /* Dala max 1280px */
+  --container-text: 34rem;
   --gutter: clamp(1.25rem, 4vw, 4rem);
-  --header-h: 64px;
+  --header-h: 68px;
   --hairline: 1px;
 
+  /* Dala доверяет масштабу, не весу: 400 — регуляр заголовков, 200 — тело */
+  --weight-body: 200;
   --weight-regular: 400;
-  --weight-medium: 500;
-  --weight-heavy: 600;
+  --weight-medium: 400;
+  --weight-heavy: 400;
+  --weight-semibold: 600;
 
-  /* motion (v7) */
+  /* motion */
   --dur-micro: 0.15s;
   --dur-short: 0.3s;
   --dur-base: 0.6s;

@@ -2,7 +2,8 @@
 @import "../styles/tokens.css";
 
 /* ============================================================
-   База — v7: тёмное «живое поле», контент в стеклянных приборах
+   База — Dala: чистый чёрный void, контент плывёт в пустоте.
+   Ни панелей, ни карточек, ни теней — иерархия масштабом и цветом.
    ============================================================ */
 html {
   height: 100%;
@@ -10,24 +11,32 @@ html {
   text-rendering: optimizeLegibility;
   scroll-behavior: smooth;
   scroll-padding-top: var(--header-h);
+  background: var(--color-void);
 }
 
 body {
   margin: 0;
   min-height: 100%;
-  background: var(--color-substrate);
-  color: var(--color-ink);
+  background: var(--color-void);
+  color: var(--color-bone-white);
   font-family: var(--font-display);
   font-size: var(--text-body);
+  font-weight: var(--weight-body); /* Dala: ультралайт тело (200) */
   line-height: var(--leading-body);
+  letter-spacing: -0.01em;
 }
 
-::selection { background: var(--color-signal); color: var(--color-ink); }
+/* Dala: заголовки — вес 400, никогда не bold; иерархия масштабом+трекингом */
+h1, h2, h3, h4 {
+  font-weight: var(--weight-regular);
+}
+
+::selection { background: var(--color-iris); color: var(--color-bone-white); }
 
 *:focus-visible {
-  outline: 2px solid var(--color-signal-ink);
+  outline: 2px solid var(--color-iris);
   outline-offset: 3px;
-  border-radius: 1px;
+  border-radius: 2px;
 }
 
 /* Lenis */
@@ -53,85 +62,63 @@ html.js [data-reveal] { opacity: 0; }
 }
 
 /* ============================================================
-   Стеклянные «приборы» над живой подложкой (v7)
+   Dala: секции-«приборы» больше НЕ светлые панели — всё плывёт на void.
+   Классы сохранены (компоненты на них ссылаются) и обнулены в прозрачность.
    ============================================================ */
 .instrument {
-  background: var(--color-bone-glass-panel);
-  -webkit-backdrop-filter: blur(10px);
-  backdrop-filter: blur(10px);
+  background: transparent;
 }
-.tile-bone {
-  background: var(--color-bone-glass-tile);
-  -webkit-backdrop-filter: blur(7px);
-  backdrop-filter: blur(7px);
-}
+.tile-bone,
 .tile-ink {
-  background: var(--color-ink-glass-tile);
-  -webkit-backdrop-filter: blur(7px);
-  backdrop-filter: blur(7px);
+  background: transparent;
 }
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .instrument { background: var(--color-bone); }
-  .tile-bone { background: var(--color-bone-sunken); }
-  .tile-ink { background: var(--color-ink); }
-}
-
-/* Мост тёмная→светлая (из v7-полировки): полоса над первой светлой секцией */
-.instrument-bridge { position: relative; }
-.instrument-bridge::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 0;
-  transform: translateY(-100%);
-  height: clamp(48px, 8vw, 120px);
-  pointer-events: none;
-  background: linear-gradient(to bottom, transparent, var(--color-bone-glass-panel));
-}
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .instrument-bridge::before {
-    background: linear-gradient(to bottom, transparent, var(--color-bone));
-  }
-}
+/* Мост тёмная→светлая больше не нужен: везде void */
+.instrument-bridge::before { content: none; }
 
 /* ============================================================
-   Приборная панель (HUD/терминал/консьерж) — тёмное стекло + моно
+   Приборная панель (HUD/терминал/консьерж) — тёмное стекло на void + моно.
+   Единственное «стекло» в Dala: живой инструментальный слой поверх пустоты.
    ============================================================ */
 .instrument-panel {
   background: var(--color-hud-bg);
-  color: var(--color-ink-fg);
+  color: var(--color-bone-white);
   border: var(--hairline) solid var(--color-hud-line);
+  border-radius: var(--radius-md);
   font-family: var(--font-mono);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .instrument-panel { background: var(--color-ink); }
+  .instrument-panel { background: #0a0a0c; }
 }
 
-/* Сигнальная кнопка (v7-закон: зелёная заливка + ink-текст, 10.3:1) */
+/* ============================================================
+   Dala: единственная заливка-действие — фиолетовая пилюля (electric-iris).
+   Белый текст, полная пилюля, без градиента.
+   ============================================================ */
 .hanko {
-  background: var(--color-signal);
-  color: var(--color-ink);
-  border-radius: var(--radius-sm);
-  transition: background var(--dur-micro) var(--ease-standard);
+  background: var(--color-iris);
+  color: var(--color-bone-white);
+  border-radius: 9999px;
+  transition: background var(--dur-micro) var(--ease-standard),
+    transform var(--dur-micro) var(--ease-standard);
 }
-.hanko:hover { background: var(--color-signal-bright); }
+.hanko:hover { background: var(--color-iris-bright); }
+.hanko:active { transform: translateY(1px); }
 
 /* Диагональная штриховка (превью-зоны на тёмных плитках) */
 .diagonal-hatch {
   background-color: var(--color-ink-deep);
   background-image: repeating-linear-gradient(
     135deg,
-    rgba(242, 240, 233, 0.05) 0,
-    rgba(242, 240, 233, 0.05) 1px,
+    rgba(255, 255, 255, 0.05) 0,
+    rgba(255, 255, 255, 0.05) 1px,
     transparent 1px,
     transparent 11px
   );
 }
 
-.signal-glow { box-shadow: 0 0 8px rgb(var(--color-signal-rgb) / 0.5); }
+.signal-glow { box-shadow: 0 0 10px rgb(var(--color-signal-rgb) / 0.55); }
 
 /* Пульс живой точки */
 @keyframes slk-live-pulse {
@@ -151,7 +138,7 @@ html.js [data-reveal] { opacity: 0; }
 }
 .case-window { animation: case-window-in var(--dur-short) var(--ease-ink); }
 
-/* Boot-оверлей: на substrate; гаснет как в v8 (no-JS / повторный заход / rm) */
+/* Boot-оверлей: на void; гаснет как в v8 (no-JS / повторный заход / rm) */
 html:not(.js) .boot-overlay { display: none; }
 html[data-booted] .boot-overlay { display: none; }
 @media (prefers-reduced-motion: reduce) {

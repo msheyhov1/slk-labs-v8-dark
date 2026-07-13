@@ -9,8 +9,8 @@
 
 import { mulberry32 } from "@/lib/seed";
 
-const INK = [0.855, 0.839, 0.8] as const; // костяной свет узлов/линий (v7)
-const RED = [0, 0.878, 0.541] as const; // сигнальный зелёный: пакеты = свет (v7)
+const INK = [0.62, 0.6, 0.72] as const; // холодный бело-лавандовый свет узлов/линий (Dala)
+const RED = [0.502, 0.322, 1.0] as const; // electric-iris #8052ff: пакеты = свет (Dala)
 
 const CFG = {
   densityDivisor: 26000, // px² на узел
