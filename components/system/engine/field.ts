@@ -39,6 +39,7 @@ const CFG = {
   pitchAmp: 0.07,
   breathAmp: 0.035, // «дыхание» масштаба (живее)
   hoverGrow: 0.055, // мозг РАСШИРЯЕТСЯ, пока курсор над ним
+  clickGrow: 0.2, // клик-пульс: весь мозг раздувается (и оседает обратно)
   pointerR: 0.3, // радиус влияния курсора (× min(w,h))
   pointerPush: 130, // сила расталкивания (px/с на пике) — мозг раскрывается
   moveSpawnPx: 30, // каждые N px пути мыши — импульс из ближнего синапса
@@ -118,6 +119,7 @@ export class LivingFieldEngine {
   private parX = 0; // параллакс центра мозга
   private parY = 0;
   private hoverAmt = 0; // 0→1 когда курсор над мозгом (расширение)
+  private pulseT = -1; // таймер клик-пульса (<0 = нет пульса)
   private disposed = false;
   private cleanupFns: Array<() => void> = [];
 
@@ -498,6 +500,7 @@ export class LivingFieldEngine {
   }
 
   private burst() {
+    this.pulseT = 0; // весь мозг раздувается — расстояния между частицами растут
     for (let k = 0; k < 12; k++) this.spawnPacket();
   }
 
@@ -599,11 +602,23 @@ export class LivingFieldEngine {
       }
     }
 
+    // клик-пульс: атака 120мс → плавный спад ~0.7с (вдох и выдох)
+    let pulseAmt = 0;
+    if (this.pulseT >= 0) {
+      if (dt > 0) this.pulseT += dt;
+      const atk = Math.min(1, this.pulseT / 0.12);
+      const dcy = Math.exp(-Math.max(0, this.pulseT - 0.12) * 2.0);
+      pulseAmt = atk * dcy;
+      if (this.pulseT > 2.5) this.pulseT = -1;
+    }
+
     // ракурс: профиль + мягкое покачивание (НЕ полное вращение) + дыхание
     const yaw = CFG.yawBase + Math.sin(this.t * CFG.yawSpeed) * CFG.yawAmp;
     const pitch = Math.sin(this.t * 0.4) * CFG.pitchAmp;
     const breath =
-      (1 + Math.sin(this.t * 0.9) * CFG.breathAmp) * (1 + this.hoverAmt * CFG.hoverGrow);
+      (1 + Math.sin(this.t * 0.9) * CFG.breathAmp) *
+      (1 + this.hoverAmt * CFG.hoverGrow) *
+      (1 + pulseAmt * CFG.clickGrow);
     const cyw = Math.cos(yaw), syw = Math.sin(yaw);
     const cpt = Math.cos(pitch), spt = Math.sin(pitch);
 
@@ -741,7 +756,7 @@ export class LivingFieldEngine {
       this.ptsArr[q++] = this.proj[i * 3];
       this.ptsArr[q++] = this.proj[i * 3 + 1];
       this.ptsArr[q++] = this.sz[i] * df * (1 + ex * 0.5);
-      this.ptsArr[q++] = Math.min(1, this.al[i] * df * tw * wv * (1 + ex * 1.1));
+      this.ptsArr[q++] = Math.min(1, this.al[i] * df * tw * wv * (1 + ex * 1.1 + pulseAmt * 0.35));
       this.ptsArr[q++] = this.col[i * 3];
       this.ptsArr[q++] = this.col[i * 3 + 1];
       this.ptsArr[q++] = this.col[i * 3 + 2];
