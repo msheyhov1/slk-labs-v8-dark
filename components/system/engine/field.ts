@@ -1,18 +1,19 @@
 // Живое поле v8-dark — чистый WebGL2, без three (бюджет JS).
-// «Нейро-мозг» уровня Dala: ~16 000 крошечных контурных ТРЕУГОЛЬНИКОВ,
-// вся анимация которых считается НА ВИДЕОКАРТЕ (vertex shader) — как
-// GPGPU-подход студийных сайтов. Поверх — слой «хабов» (CPU): синапсы-
-// линии между соседями и импульсы света, бегущие цепочками.
+// «Нейро-мозг»: ТОЛЬКО частицы и сеть связей — никаких треугольников.
+// Два слоя:
+//  1) GPU-пыль: ~12 000 круглых частиц-огоньков (масса и глубина мозга),
+//     вся анимация в vertex-шейдере (как GPGPU у студийных сайтов);
+//  2) НЕЙРОСЕТЬ с НАСТОЯЩЕЙ ФИЗИКОЙ (CPU): ~1000 узлов-нейронов, связи-
+//     синапсы как пружины. Толкаешь узел — соседи тянутся за ним по
+//     связям, рябь расходится по сети, всё желейно оседает (масса+
+//     демпфирование). Импульсы света бегут по синапсам цепочками.
 //
-// Фирменные приёмы (по мотивам dala.craftedbygc.com):
-// - ИНТРО-СБОРКА: частицы слетаются из рассеяния и собирают мозг (стаггер);
-// - УДАРНАЯ ВОЛНА по клику: кольцо расталкивает и подсвечивает частицы;
-// - курсор РАСКРЫВАЕТ мозг (расталкивание + вихрь + разгорание);
-// - дыхание, покачивание профиля, мерцание, волна активности по коре.
+// Взаимодействие: курсор РАСТАЛКИВАЕТ сеть (+вихрь), сила растёт со
+// скоростью мыши; клик — УДАРНАЯ ВОЛНА (кольцо бьёт по сети импульсом);
+// интро-сборка: частицы слетаются и собирают мозг (wall-clock).
 //
-// Перф: GPU-слою всё равно на количество (униформы раз в кадр); CPU-слой
-// хабов ограничен ~1.6k, связи считаются один раз при посеве. Пауза на
-// hidden/blur/вне вьюпорта, авто-даунгрейд по FPS. reseed — пересборка.
+// Перф: физика O(узлы+связи) ≈ тривиально; пыль — униформы раз в кадр.
+// Пауза на hidden/blur/вне вьюпорта, авто-даунгрейд по FPS.
 
 import { mulberry32 } from "@/lib/seed";
 
@@ -27,17 +28,17 @@ const PALETTE: ReadonlyArray<readonly [number, number, number]> = [
 const PALETTE_W = [0.52, 0.24, 0.14, 0.06, 0.04] as const;
 
 const CFG = {
-  // GPU-облако (треугольники)
-  cloudDivisor: 72, // px² на частицу облака
-  maxCloud: 16000,
-  maxCloudMobile: 6500,
-  minCloud: 3500,
-  // CPU-хабы (линии/импульсы)
-  hubDivisor: 1500,
+  // GPU-пыль (круглые частицы)
+  cloudDivisor: 95, // px² на частицу
+  maxCloud: 12000,
+  maxCloudMobile: 5000,
+  minCloud: 3000,
+  // нейроны (физическая сеть)
+  hubDivisor: 1350,
   maxHubs: 1100,
   maxHubsMobile: 520,
   minHubs: 320,
-  ambientRatio: 0.1, // ambient-огоньки от числа хабов
+  ambientRatio: 0.1,
   kNear: 3,
   maxLink3d: 0.32,
   // сцена
@@ -46,15 +47,23 @@ const CFG = {
   yawSpeed: 0.26,
   pitchAmp: 0.07,
   breathAmp: 0.03,
-  hoverGrow: 0.04, // лёгкое расширение, пока курсор над мозгом
-  introDur: 1.7, // сек полной сборки
+  hoverGrow: 0.04,
+  introDur: 1.7,
+  // ФИЗИКА СЕТИ (пружины, масса=1)
+  kHome: 26, // пружина к дому (держит форму мозга)
+  kLink: 80, // пружина связи (тянет соседей — рябь по сети)
+  dampRate: 3.4, // демпфирование (ниже — дольше желейно колышется)
+  maxDisp: 110, // предел смещения узла (стабильность)
   // взаимодействие
   pointerR: 0.28, // × min(w,h)
-  pushPx: 36, // раскрытие у курсора (px на пике)
-  swirlPx: 15, // вихрь у курсора
-  waveSpeed: 760, // px/с — скорость ударной волны
-  waveLife: 0.95, // сек жизни волны
-  waveAmp: 30, // px расталкивания в кольце
+  mouseForce: 3200, // сила расталкивания (px/с²)
+  swirlRatio: 0.45, // доля вихревой компоненты
+  dustPushPx: 30, // раскрытие пыли у курсора (в шейдере)
+  dustSwirlPx: 13,
+  waveSpeed: 760,
+  waveLife: 0.95,
+  waveKick: 1600, // импульс волны по сети (px/с²·band)
+  waveAmpDust: 26, // смещение пыли в кольце (px, в шейдере)
   moveSpawnPx: 30,
   packetEvery: [0.08, 0.25] as const,
   packetLife: 0.36,
@@ -77,7 +86,7 @@ export class LivingFieldEngine {
   private w = 0;
   private h = 0;
 
-  // — GPU-облако —
+  // — GPU-пыль —
   private cloudN = 0;
   private cloudDrawN = 0;
   private cloudProg!: WebGLProgram;
@@ -85,14 +94,16 @@ export class LivingFieldEngine {
   private cloudVao!: WebGLVertexArrayObject;
   private cloudU: Record<string, WebGLUniformLocation | null> = {};
 
-  // — хабы (CPU): синапсы + импульсы —
+  // — нейроны (физическая сеть) —
   private n = 0;
   private home = new Float32Array(0); // x,y,z дома (объектное пространство)
   private target = new Float32Array(0);
   private ph = new Float32Array(0);
   private col = new Float32Array(0);
-  private proj = new Float32Array(0); // px,py,depth
-  private off = new Float32Array(0); // пружинное смещение от курсора
+  private nsz = new Float32Array(0); // размер узла (px)
+  private hproj = new Float32Array(0); // проекция дома: px,py,depth
+  private disp = new Float32Array(0); // физ. смещение узла от дома (px)
+  private vel = new Float32Array(0); // скорость узла (px/с)
 
   private links: number[] = [];
   private linkAl: number[] = [];
@@ -118,10 +129,10 @@ export class LivingFieldEngine {
   private raf = 0;
   private running = false;
   private last = 0;
-  private introT = 0; // 0→1 сборка мозга
-  private introStart = -1; // wall-clock старт сборки (мс) — стойко к троттлингу вкладки
+  private introT = 0;
+  private introStart = -1; // wall-clock старт сборки — стойко к троттлингу вкладки
 
-  // GL (линии + ambient-точки)
+  // GL (линии + точки узлов/ambient)
   private linProg!: WebGLProgram;
   private ptsProg!: WebGLProgram;
   private linBuf!: WebGLBuffer;
@@ -139,7 +150,7 @@ export class LivingFieldEngine {
   private pointer = { x: 0, y: 0, active: false };
   private moveAcc = 0;
   private frameMove = 0;
-  private ptrSpeed = 0; // сглаженная скорость курсора (px/с)
+  private ptrSpeed = 0;
   private parX = 0;
   private parY = 0;
   private hoverAmt = 0;
@@ -218,7 +229,7 @@ export class LivingFieldEngine {
     this.cleanupFns.push(() => io.disconnect());
 
     if (reduced) {
-      this.introT = 1; // без интро — мозг сразу собран, один кадр
+      this.introT = 1;
       this.renderFrame(0);
     } else {
       this.start();
@@ -227,8 +238,6 @@ export class LivingFieldEngine {
 
   // ---------- публичное ----------
 
-  /** Пересобрать облако (терминал: enso --reseed): новые дома + короткая
-   *  повторная сборка + всплеск импульсов. */
   reseed(seed: number) {
     this.rand = mulberry32(seed);
     for (let i = 0; i < this.n; i++) {
@@ -238,8 +247,7 @@ export class LivingFieldEngine {
       this.target[i * 3 + 2] = p[2];
     }
     this.buildLinks(this.target);
-    this.uploadCloud(); // новые дома GPU-облака
-    // частичная повторная сборка — красиво и быстро
+    this.uploadCloud();
     this.introT = 0.35;
     this.introStart = performance.now() - CFG.introDur * 1000 * 0.35;
     this.burst();
@@ -273,37 +281,36 @@ export class LivingFieldEngine {
   private initGl() {
     const gl = this.gl;
 
-    // === GPU-облако: инстансные контурные треугольники, движение в шейдере ===
+    // === GPU-пыль: круглые частицы-огоньки, движение в шейдере ===
     const vsCloud = `#version 300 es
       precision highp float;
-      const vec2 C[3] = vec2[3](vec2(0.0,-1.0), vec2(0.8660254,0.5), vec2(-0.8660254,0.5));
-      const vec3 B[3] = vec3[3](vec3(1.,0.,0.), vec3(0.,1.,0.), vec3(0.,0.,1.));
       in vec3 aHome; in vec3 aCol; in float aRnd; in float aSz;
       uniform vec2 uRes; uniform vec2 uCenter; uniform float uR;
       uniform vec4 uRot;      // cosYaw, sinYaw, cosPitch, sinPitch
       uniform float uBreath; uniform float uT; uniform float uIntro;
+      uniform float uDpr;
       uniform vec4 uMouse;    // x,y px; z радиус px; w сила 0..1
       uniform vec4 uWaves[3]; // x,y px; z радиус кольца px; w амплитуда px
-      out vec3 vColor; out vec3 vBary; out float vAlpha;
+      out vec3 vColor; out float vAlpha;
 
       void main() {
         float rnd = aRnd;
-        // ИНТРО-СБОРКА: из рассеянной сферы к дому, стаггер по частицам
+        // интро-сборка: из рассеянной сферы к дому (стаггер)
         float d0 = fract(rnd * 7.31) * 0.55;
         float lt = clamp((uIntro - d0) / 0.45, 0.0, 1.0);
         float ease = 1.0 - pow(1.0 - lt, 3.0);
         vec3 dir = normalize(aHome + vec3(0.013, 0.007, 0.021));
         vec3 scat = dir * (1.9 + fract(rnd * 13.7) * 1.9);
         vec3 hp = mix(scat, aHome, ease);
-        // поворот профиля (yaw) + тангаж (pitch)
+        // поворот профиля + тангаж
         float x1 = hp.x * uRot.x + hp.z * uRot.y;
         float z1 = -hp.x * uRot.y + hp.z * uRot.x;
         float y1 = hp.y * uRot.z - z1 * uRot.w;
         float z2 = hp.y * uRot.w + z1 * uRot.z;
         float persp = 1.0 + z2 * 0.14;
         vec2 pos = uCenter + vec2(x1, y1) * uR * uBreath * persp;
-        // живое дрожание каждой частицы
-        pos += vec2(sin(uT * 1.4 + rnd * 39.0), cos(uT * 1.2 + rnd * 27.0)) * 2.4;
+        // живое дрожание
+        pos += vec2(sin(uT * 1.4 + rnd * 39.0), cos(uT * 1.2 + rnd * 27.0)) * 2.2;
         float excite = 0.0;
         // курсор: раскрытие + вихрь
         vec2 md = pos - uMouse.xy;
@@ -311,11 +318,11 @@ export class LivingFieldEngine {
         if (mr < uMouse.z) {
           float f = (1.0 - mr / uMouse.z) * uMouse.w;
           vec2 mdir = md / mr;
-          pos += mdir * f * ${CFG.pushPx.toFixed(1)};
-          pos += vec2(-mdir.y, mdir.x) * f * ${CFG.swirlPx.toFixed(1)};
-          excite += f * 1.1;
+          pos += mdir * f * ${CFG.dustPushPx.toFixed(1)};
+          pos += vec2(-mdir.y, mdir.x) * f * ${CFG.dustSwirlPx.toFixed(1)};
+          excite += f;
         }
-        // ударные волны (кольца от клика)
+        // ударные волны
         for (int i = 0; i < 3; i++) {
           vec4 wv = uWaves[i];
           if (wv.w <= 0.0) continue;
@@ -323,35 +330,31 @@ export class LivingFieldEngine {
           float wr = length(wd) + 0.0001;
           float band = exp(-pow(wr - wv.z, 2.0) / 1100.0);
           pos += (wd / wr) * band * wv.w;
-          excite += band * (wv.w / ${CFG.waveAmp.toFixed(1)}) * 0.9;
+          excite += band * (wv.w / ${CFG.waveAmpDust.toFixed(1)}) * 0.8;
         }
-        // глубина, мерцание, волна активности по коре
+        // глубина, мерцание, волна активности
         float df = 0.55 + 0.45 * (z2 * 0.5 + 0.5);
-        float tw = 0.75 + 0.25 * sin(uT * 2.1 + rnd * 43.0);
+        float tw = 0.72 + 0.28 * sin(uT * 2.1 + rnd * 43.0);
         float act = sin(uT * 0.9 - (aHome.x * 2.0 + aHome.y * 1.2));
         float wact = 1.0 + max(act, 0.0) * max(act, 0.0) * 0.3;
-        // вершина треугольника (вращение частицы)
-        float ang = rnd * 6.2831 + uT * (rnd - 0.5) * 0.9;
-        float ca = cos(ang), sa = sin(ang);
-        vec2 corner = mat2(ca, -sa, sa, ca) * C[gl_VertexID];
-        float sz = aSz * df * (1.0 + excite * 0.4);
-        pos += corner * sz;
         vec2 clip = (pos / uRes) * 2.0 - 1.0;
         gl_Position = vec4(clip.x, -clip.y, 0.0, 1.0);
-        vBary = B[gl_VertexID];
+        gl_PointSize = aSz * df * (1.0 + excite * 0.5) * uDpr;
         vColor = aCol * (1.0 + excite * 0.9);
-        vAlpha = clamp((0.45 + 0.5 * fract(rnd * 5.3)) * df * tw * wact
+        vAlpha = clamp((0.3 + 0.4 * fract(rnd * 5.3)) * df * tw * wact
                        * (0.12 + 0.88 * ease) + excite * 0.25, 0.0, 1.0);
       }`;
     const fsCloud = `#version 300 es
       precision mediump float;
-      in vec3 vColor; in vec3 vBary; in float vAlpha; out vec4 o;
+      in vec3 vColor; in float vAlpha; out vec4 o;
       void main() {
-        float e = min(vBary.x, min(vBary.y, vBary.z));
-        float edge = 1.0 - smoothstep(0.02, 0.28, e); // резкий контур
-        float a = max(edge, 0.18) * vAlpha;           // контур + слабая заливка
-        if (a < 0.015) discard;
-        o = vec4(vColor * (0.7 + 0.6 * edge), a);
+        vec2 p = gl_PointCoord * 2.0 - 1.0;
+        float d = dot(p, p);
+        if (d > 1.0) discard;
+        float core = smoothstep(0.3, 0.0, d);
+        float halo = smoothstep(1.0, 0.25, d);
+        float a = (core * 0.8 + halo * 0.45) * vAlpha;
+        o = vec4(vColor * (0.75 + 0.5 * core), a);
       }`;
 
     // === линии (синапсы + импульсы) ===
@@ -369,7 +372,7 @@ export class LivingFieldEngine {
       in float vAlpha; in vec3 vColor; out vec4 o;
       void main() { o = vec4(vColor, vAlpha); }`;
 
-    // === ambient-огоньки (мягкие точки) ===
+    // === точки: узлы-нейроны + ambient (яркое ядро + свечение) ===
     const vsPts = `#version 300 es
       in vec2 aPos; in float aSize; in float aAlpha; in vec3 aColor;
       out float vAlpha; out vec3 vColor;
@@ -387,8 +390,10 @@ export class LivingFieldEngine {
         vec2 p = gl_PointCoord * 2.0 - 1.0;
         float d = dot(p, p);
         if (d > 1.0) discard;
+        float core = smoothstep(0.35, 0.0, d);
         float halo = smoothstep(1.0, 0.2, d);
-        o = vec4(vColor, halo * vAlpha);
+        float a = (core * 0.9 + halo * 0.5) * vAlpha;
+        o = vec4(vColor * (0.8 + 0.6 * core), a);
       }`;
 
     this.cloudProg = this.program(vsCloud, fsCloud);
@@ -402,16 +407,15 @@ export class LivingFieldEngine {
     this.linVao = gl.createVertexArray()!;
     this.ptsVao = gl.createVertexArray()!;
 
-    // VAO облака: инстансные атрибуты (divisor=1), stride 8 float
+    // VAO пыли: обычные атрибуты (POINTS), stride 8 float
     gl.bindVertexArray(this.cloudVao);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.cloudBuf);
-    this.iattrib(this.cloudProg, "aHome", 3, 32, 0);
-    this.iattrib(this.cloudProg, "aCol", 3, 32, 12);
-    this.iattrib(this.cloudProg, "aRnd", 1, 32, 24);
-    this.iattrib(this.cloudProg, "aSz", 1, 32, 28);
+    this.attrib(this.cloudProg, "aHome", 3, 32, 0);
+    this.attrib(this.cloudProg, "aCol", 3, 32, 12);
+    this.attrib(this.cloudProg, "aRnd", 1, 32, 24);
+    this.attrib(this.cloudProg, "aSz", 1, 32, 28);
     gl.bindVertexArray(null);
 
-    // VAO линий: stride 6 float
     gl.bindVertexArray(this.linVao);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.linBuf);
     this.attrib(this.linProg, "aPos", 2, 24, 0);
@@ -419,7 +423,6 @@ export class LivingFieldEngine {
     this.attrib(this.linProg, "aColor", 3, 24, 12);
     gl.bindVertexArray(null);
 
-    // VAO точек: stride 7 float
     gl.bindVertexArray(this.ptsVao);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.ptsBuf);
     this.attrib(this.ptsProg, "aPos", 2, 28, 0);
@@ -428,12 +431,12 @@ export class LivingFieldEngine {
     this.attrib(this.ptsProg, "aColor", 3, 28, 16);
     gl.bindVertexArray(null);
 
-    for (const u of ["uRes", "uCenter", "uR", "uRot", "uBreath", "uT", "uIntro", "uMouse", "uWaves"]) {
+    for (const u of ["uRes", "uCenter", "uR", "uRot", "uBreath", "uT", "uIntro", "uDpr", "uMouse", "uWaves"]) {
       this.cloudU[u] = gl.getUniformLocation(this.cloudProg, u === "uWaves" ? "uWaves[0]" : u);
     }
 
     gl.enable(gl.BLEND);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE); // аддитивный свет на чёрном
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
     gl.clearColor(0, 0, 0, 1);
   }
 
@@ -464,15 +467,6 @@ export class LivingFieldEngine {
     if (loc < 0) return;
     gl.enableVertexAttribArray(loc);
     gl.vertexAttribPointer(loc, size, gl.FLOAT, false, stride, offset);
-  }
-
-  private iattrib(prog: WebGLProgram, name: string, size: number, stride: number, offset: number) {
-    const gl = this.gl;
-    const loc = gl.getAttribLocation(prog, name);
-    if (loc < 0) return;
-    gl.enableVertexAttribArray(loc);
-    gl.vertexAttribPointer(loc, size, gl.FLOAT, false, stride, offset);
-    gl.vertexAttribDivisor(loc, 1);
   }
 
   private resize() {
@@ -517,7 +511,6 @@ export class LivingFieldEngine {
     return true;
   }
 
-  /** Извилины: волнистые гряды коры; борозды между ними остаются тёмными. */
   private onGyrus(x: number, y: number, z: number): boolean {
     if (this.inCerebellum(x, y, z) && !this.inCerebrum(x, y, z)) {
       return Math.sin(16 * (y - 0.38) + 6 * (x - 0.52)) > -0.15;
@@ -525,7 +518,6 @@ export class LivingFieldEngine {
     return Math.sin(11 * y + 3.4 * Math.sin(2.3 * x) + 2.2 * z) > -0.2;
   }
 
-  /** Случайная точка мозга: ~72% — на грядах коры. */
   private sampleBrainPoint(): [number, number, number] {
     const shell = this.rand() < 0.72;
     for (let tries = 0; tries < 80; tries++) {
@@ -560,27 +552,31 @@ export class LivingFieldEngine {
     const mobile = this.w < 720;
     const area = this.w * this.h;
 
-    // GPU-облако
+    // GPU-пыль
     const cloudCap = mobile ? CFG.maxCloudMobile : CFG.maxCloud;
     this.cloudN = Math.max(CFG.minCloud, Math.min(cloudCap, Math.round(area / CFG.cloudDivisor)));
     this.cloudDrawN = this.cloudN;
     this.uploadCloud();
 
-    // CPU-хабы
+    // нейроны
     const hubCap = mobile ? CFG.maxHubsMobile : CFG.maxHubs;
     this.n = Math.max(CFG.minHubs, Math.min(hubCap, Math.round(area / CFG.hubDivisor)));
     this.home = new Float32Array(this.n * 3);
     this.target = new Float32Array(this.n * 3);
     this.ph = new Float32Array(this.n);
     this.col = new Float32Array(this.n * 3);
-    this.proj = new Float32Array(this.n * 3);
-    this.off = new Float32Array(this.n * 2);
+    this.nsz = new Float32Array(this.n);
+    this.hproj = new Float32Array(this.n * 3);
+    this.disp = new Float32Array(this.n * 2);
+    this.vel = new Float32Array(this.n * 2);
     for (let i = 0; i < this.n; i++) {
       const p = this.sampleBrainPoint();
       this.home[i * 3] = p[0];
       this.home[i * 3 + 1] = p[1];
       this.home[i * 3 + 2] = p[2];
       this.ph[i] = this.rand() * Math.PI * 2;
+      const hub = this.rand() < 0.06; // редкие крупные нейроны
+      this.nsz[i] = (hub ? 7.5 : 3.2 + this.rand() * 2.6) * this.dpr;
       this.pickColor(this.col, i * 3);
     }
     this.target.set(this.home);
@@ -601,10 +597,10 @@ export class LivingFieldEngine {
       this.aAl[i] = 0.1 + this.rand() * 0.2;
       this.pickColor(this.aCol, i * 3);
     }
-    this.ptsArr = new Float32Array(this.an * 7);
+    this.ptsArr = new Float32Array((this.n + this.an) * 7);
   }
 
-  /** Дома GPU-облака: та же форма мозга; upload одним буфером. */
+  /** Дома GPU-пыли: та же форма мозга. */
   private uploadCloud() {
     const gl = this.gl;
     const arr = new Float32Array(this.cloudN * 8);
@@ -616,13 +612,12 @@ export class LivingFieldEngine {
       this.pickColor(tmp, 0);
       arr[o + 3] = tmp[0]; arr[o + 4] = tmp[1]; arr[o + 5] = tmp[2];
       arr[o + 6] = this.rand();
-      arr[o + 7] = 1.7 + this.rand() * 2.6; // размер треугольника, px
+      arr[o + 7] = 2.6 + this.rand() * 3.6; // диаметр точки, px (до dpr)
     }
     gl.bindBuffer(gl.ARRAY_BUFFER, this.cloudBuf);
     gl.bufferData(gl.ARRAY_BUFFER, arr, gl.STATIC_DRAW);
   }
 
-  /** Синапсы хабов: k-ближайших в 3D, один раз при посеве. */
   private buildLinks(pts: Float32Array) {
     const n = this.n;
     this.links.length = 0;
@@ -655,7 +650,7 @@ export class LivingFieldEngine {
         if (seen.has(key)) continue;
         seen.add(key);
         this.links.push(i, j);
-        this.linkAl.push(0.16 + this.rand() * 0.12);
+        this.linkAl.push(0.2 + this.rand() * 0.14);
         this.adj[i].push(j);
         this.adj[j].push(i);
       }
@@ -689,8 +684,8 @@ export class LivingFieldEngine {
   private spawnNearPointer(radiusPx: number) {
     for (let tries = 0; tries < 50; tries++) {
       const i = Math.floor(this.rand() * this.n);
-      const dx = this.proj[i * 3] - this.pointer.x;
-      const dy = this.proj[i * 3 + 1] - this.pointer.y;
+      const dx = this.hproj[i * 3] + this.disp[i * 2] - this.pointer.x;
+      const dy = this.hproj[i * 3 + 1] + this.disp[i * 2 + 1] - this.pointer.y;
       if (dx * dx + dy * dy < radiusPx * radiusPx) {
         this.spawnPacket(i);
         return;
@@ -728,7 +723,6 @@ export class LivingFieldEngine {
     if (this.frames >= 120) {
       const fps = this.frames / this.fpsAcc;
       if (fps < CFG.lowFps) {
-        // даунгрейд: меньше облака, реже связи, без ambient
         this.cloudDrawN = Math.floor(this.cloudN * 0.5);
         const thin: number[] = [];
         const thinAl: number[] = [];
@@ -752,8 +746,7 @@ export class LivingFieldEngine {
     const m = Math.min(this.w, this.h);
     const mobile = this.w < 720;
 
-    // интро-сборка: по настенным часам от ПЕРВОГО кадра (фоновая вкладка
-    // не растягивает сборку — она играет, когда вкладку реально видно)
+    // интро по wall-clock от первого кадра
     if (dt > 0) {
       if (this.introStart < 0) this.introStart = performance.now();
       this.introT = Math.max(
@@ -761,16 +754,14 @@ export class LivingFieldEngine {
         Math.min(1, (performance.now() - this.introStart) / (CFG.introDur * 1000)),
       );
     }
-    const introGate = Math.min(1, Math.max(0, (this.introT - 0.6) / 0.4)); // взаимодействие после сборки
+    const introGate = Math.min(1, Math.max(0, (this.introT - 0.6) / 0.4));
 
-    // скорость курсора (сглаженная) — сильнее машешь, сильнее вихрь
     if (dt > 0) {
       const inst = this.frameMove / Math.max(dt, 1e-4);
       this.ptrSpeed += (inst - this.ptrSpeed) * Math.min(1, dt * 8);
       this.frameMove = 0;
     }
 
-    // центр/радиус + параллакс
     const cx0 = (mobile ? 0.5 : 0.72) * this.w;
     const cy0 = (mobile ? 0.32 : 0.46) * this.h;
     const R = (mobile ? 0.3 : 0.38) * m;
@@ -785,7 +776,6 @@ export class LivingFieldEngine {
     const cx = cx0 + this.parX;
     const cy = cy0 + this.parY;
 
-    // курсор над мозгом → лёгкое расширение
     if (dt > 0) {
       const near =
         this.pointer.active &&
@@ -793,7 +783,6 @@ export class LivingFieldEngine {
       this.hoverAmt += ((near ? 1 : 0) - this.hoverAmt) * Math.min(1, dt * 3);
     }
 
-    // миграция хабов при reseed
     if (dt > 0) {
       const f = Math.min(1, dt * 2.2);
       for (let i = 0; i < this.n * 3; i++) {
@@ -801,7 +790,6 @@ export class LivingFieldEngine {
       }
     }
 
-    // сцена: профиль + покачивание + дыхание
     const yaw = CFG.yawBase + Math.sin(this.t * CFG.yawSpeed) * CFG.yawAmp;
     const pitch = Math.sin(this.t * 0.4) * CFG.pitchAmp;
     const breath =
@@ -822,14 +810,12 @@ export class LivingFieldEngine {
       waveU[i * 4] = wv.x;
       waveU[i * 4 + 1] = wv.y;
       waveU[i * 4 + 2] = age * CFG.waveSpeed;
-      waveU[i * 4 + 3] = CFG.waveAmp * k * k; // затухает
+      waveU[i * 4 + 3] = CFG.waveAmpDust * k * k;
     }
 
-    // ---------- CPU-хабы: интро + проекция + волны + курсор ----------
-    const Rp = CFG.pointerR * m;
+    // ---------- нейроны: проекция дома (интро → поворот) ----------
     for (let i = 0; i < this.n; i++) {
       const rnd = this.ph[i] / (Math.PI * 2);
-      // интро (в объектном пространстве, как в шейдере облака)
       const d0 = (rnd * 7.31 - Math.floor(rnd * 7.31)) * 0.55;
       const lt = Math.min(1, Math.max(0, (this.introT - d0) / 0.45));
       const ease = 1 - Math.pow(1 - lt, 3);
@@ -848,47 +834,81 @@ export class LivingFieldEngine {
       const z1 = -hx * syw + hz * cyw;
       const y1 = hy * cpt - z1 * spt;
       const z2 = hy * spt + z1 * cpt;
-      const jit = Math.sin(this.t * 1.6 + this.ph[i]) * 0.008;
+      const jit = Math.sin(this.t * 1.3 + this.ph[i]) * 0.006;
       const persp = 1 + z2 * 0.14;
-      let px = cx + (x1 + jit) * R * breath * persp + this.off[i * 2];
-      let py = cy + (y1 + jit * 0.8) * R * breath * persp + this.off[i * 2 + 1];
-      // волны толкают и хабы (линии живут вместе с облаком)
-      for (let wI = 0; wI < 3; wI++) {
-        const amp = waveU[wI * 4 + 3];
-        if (amp <= 0) continue;
-        const wdx = px - waveU[wI * 4];
-        const wdy = py - waveU[wI * 4 + 1];
-        const wr = Math.hypot(wdx, wdy) + 0.0001;
-        const band = Math.exp(-Math.pow(wr - waveU[wI * 4 + 2], 2) / 1100);
-        px += (wdx / wr) * band * amp;
-        py += (wdy / wr) * band * amp;
-      }
-      this.proj[i * 3] = px;
-      this.proj[i * 3 + 1] = py;
-      this.proj[i * 3 + 2] = z2;
+      this.hproj[i * 3] = cx + (x1 + jit) * R * breath * persp;
+      this.hproj[i * 3 + 1] = cy + (y1 + jit * 0.8) * R * breath * persp;
+      this.hproj[i * 3 + 2] = z2;
     }
 
-    // пружина курсора на хабах (раскрытие + вихрь)
+    // ---------- ФИЗИКА СЕТИ: пружины дом+связи, курсор, волны ----------
     if (dt > 0) {
-      const decay = Math.max(0, 1 - 2.4 * dt);
-      const strength = introGate;
+      const damp = Math.exp(-CFG.dampRate * dt);
+      const Rp = CFG.pointerR * m;
+      const mForce =
+        CFG.mouseForce *
+        introGate *
+        (this.pointer.active ? 0.7 + Math.min(1, this.ptrSpeed / 700) * 0.6 : 0);
+
+      // силы связей: соседи тянут друг друга — рябь бежит по сети
+      const L = this.links.length / 2;
+      for (let li = 0; li < L; li++) {
+        const a = this.links[li * 2], b = this.links[li * 2 + 1];
+        const fx = (this.disp[b * 2] - this.disp[a * 2]) * CFG.kLink * dt;
+        const fy = (this.disp[b * 2 + 1] - this.disp[a * 2 + 1]) * CFG.kLink * dt;
+        this.vel[a * 2] += fx; this.vel[a * 2 + 1] += fy;
+        this.vel[b * 2] -= fx; this.vel[b * 2 + 1] -= fy;
+      }
+
       for (let i = 0; i < this.n; i++) {
-        let ox = this.off[i * 2] * decay;
-        let oy = this.off[i * 2 + 1] * decay;
-        if (this.pointer.active && strength > 0) {
-          const dx = this.pointer.x - this.proj[i * 3];
-          const dy = this.pointer.y - this.proj[i * 3 + 1];
-          const d = Math.hypot(dx, dy);
-          if (d < Rp && d > 1) {
-            const f = (1 - d / Rp) * 130 * dt * strength;
-            ox -= (dx / d) * f;
-            oy -= (dy / d) * f;
-            ox += (-(dy / d)) * f * 0.4; // вихрь
-            oy += ((dx / d)) * f * 0.4;
+        let vx = this.vel[i * 2];
+        let vy = this.vel[i * 2 + 1];
+        const dx = this.disp[i * 2];
+        const dy = this.disp[i * 2 + 1];
+        // пружина к дому (держит форму мозга)
+        vx += -CFG.kHome * dx * dt;
+        vy += -CFG.kHome * dy * dt;
+        // курсор: расталкивание + вихрь (сила, не смещение — честная физика)
+        if (mForce > 0) {
+          const px = this.hproj[i * 3] + dx;
+          const py = this.hproj[i * 3 + 1] + dy;
+          const mdx = px - this.pointer.x;
+          const mdy = py - this.pointer.y;
+          const md = Math.hypot(mdx, mdy);
+          if (md < Rp && md > 1) {
+            const f = (1 - md / Rp) * mForce * dt;
+            const ux = mdx / md, uy = mdy / md;
+            vx += ux * f + -uy * f * CFG.swirlRatio;
+            vy += uy * f + ux * f * CFG.swirlRatio;
           }
         }
-        this.off[i * 2] = ox;
-        this.off[i * 2 + 1] = oy;
+        // ударные волны: импульс в кольце
+        for (let wI = 0; wI < 3; wI++) {
+          const amp = waveU[wI * 4 + 3];
+          if (amp <= 0) continue;
+          const px = this.hproj[i * 3] + dx;
+          const py = this.hproj[i * 3 + 1] + dy;
+          const wdx = px - waveU[wI * 4];
+          const wdy = py - waveU[wI * 4 + 1];
+          const wr = Math.hypot(wdx, wdy) + 0.0001;
+          const band = Math.exp(-Math.pow(wr - waveU[wI * 4 + 2], 2) / 1100);
+          const kick = band * CFG.waveKick * (waveU[wI * 4 + 3] / CFG.waveAmpDust) * dt;
+          vx += (wdx / wr) * kick;
+          vy += (wdy / wr) * kick;
+        }
+        // интеграция + демпфирование + предел
+        vx *= damp; vy *= damp;
+        let ndx = dx + vx * dt;
+        let ndy = dy + vy * dt;
+        const dl = Math.hypot(ndx, ndy);
+        if (dl > CFG.maxDisp) {
+          ndx = (ndx / dl) * CFG.maxDisp;
+          ndy = (ndy / dl) * CFG.maxDisp;
+        }
+        this.vel[i * 2] = vx;
+        this.vel[i * 2 + 1] = vy;
+        this.disp[i * 2] = ndx;
+        this.disp[i * 2 + 1] = ndy;
       }
 
       if (this.pointer.active && introGate > 0.5 && this.moveAcc >= CFG.moveSpawnPx) {
@@ -925,27 +945,34 @@ export class LivingFieldEngine {
     // ---------- отрисовка ----------
     gl.clear(gl.COLOR_BUFFER_BIT);
 
+    // позиции узлов = дом + физическое смещение
     // — линии-синапсы + импульсы —
     let o = 0;
-    const L = this.links.length / 2;
-    const linkFade = 0.25 + 0.75 * this.introT; // связи проявляются со сборкой
-    for (let li = 0; li < L; li++) {
+    const L2 = this.links.length / 2;
+    const linkFade = 0.25 + 0.75 * this.introT;
+    for (let li = 0; li < L2; li++) {
       const a = this.links[li * 2], b = this.links[li * 2 + 1];
-      const za = this.proj[a * 3 + 2], zb = this.proj[b * 3 + 2];
+      const ax = this.hproj[a * 3] + this.disp[a * 2];
+      const ay = this.hproj[a * 3 + 1] + this.disp[a * 2 + 1];
+      const bx = this.hproj[b * 3] + this.disp[b * 2];
+      const by = this.hproj[b * 3 + 1] + this.disp[b * 2 + 1];
+      const za = this.hproj[a * 3 + 2], zb = this.hproj[b * 3 + 2];
       const df = 0.5 + 0.5 * ((za + zb) * 0.25 + 0.5);
       const alpha = this.linkAl[li] * df * linkFade;
-      this.linArr[o++] = this.proj[a * 3]; this.linArr[o++] = this.proj[a * 3 + 1];
+      this.linArr[o++] = ax; this.linArr[o++] = ay;
       this.linArr[o++] = alpha;
       this.linArr[o++] = this.col[a * 3]; this.linArr[o++] = this.col[a * 3 + 1]; this.linArr[o++] = this.col[a * 3 + 2];
-      this.linArr[o++] = this.proj[b * 3]; this.linArr[o++] = this.proj[b * 3 + 1];
+      this.linArr[o++] = bx; this.linArr[o++] = by;
       this.linArr[o++] = alpha;
       this.linArr[o++] = this.col[b * 3]; this.linArr[o++] = this.col[b * 3 + 1]; this.linArr[o++] = this.col[b * 3 + 2];
     }
     for (const p of this.packets) {
       const a = p.a, b = p.b;
+      const ax = this.hproj[a * 3] + this.disp[a * 2];
+      const ay = this.hproj[a * 3 + 1] + this.disp[a * 2 + 1];
+      const bx = this.hproj[b * 3] + this.disp[b * 2];
+      const by = this.hproj[b * 3 + 1] + this.disp[b * 2 + 1];
       const t0 = Math.max(0, p.t - 0.22);
-      const ax = this.proj[a * 3], ay = this.proj[a * 3 + 1];
-      const bx = this.proj[b * 3], by = this.proj[b * 3 + 1];
       const x0 = ax + (bx - ax) * t0, y0 = ay + (by - ay) * t0;
       const x1 = ax + (bx - ax) * p.t, y1 = ay + (by - ay) * p.t;
       const al = Math.sin(p.t * Math.PI);
@@ -963,7 +990,7 @@ export class LivingFieldEngine {
     gl.drawArrays(gl.LINES, 0, o / 6);
     gl.bindVertexArray(null);
 
-    // — GPU-облако: 16k треугольников, вся анимация в шейдере —
+    // — GPU-пыль (круглые частицы) —
     gl.useProgram(this.cloudProg);
     gl.uniform2f(this.cloudU.uRes, this.w, this.h);
     gl.uniform2f(this.cloudU.uCenter, cx, cy);
@@ -972,38 +999,52 @@ export class LivingFieldEngine {
     gl.uniform1f(this.cloudU.uBreath, breath);
     gl.uniform1f(this.cloudU.uT, this.t);
     gl.uniform1f(this.cloudU.uIntro, this.introT);
+    gl.uniform1f(this.cloudU.uDpr, this.dpr);
     const mStr =
       (this.pointer.active ? 1 : 0) *
       introGate *
       (0.7 + Math.min(1, this.ptrSpeed / 700) * 0.6);
-    gl.uniform4f(this.cloudU.uMouse, this.pointer.x, this.pointer.y, Rp, mStr);
+    gl.uniform4f(this.cloudU.uMouse, this.pointer.x, this.pointer.y, CFG.pointerR * m, mStr);
     gl.uniform4fv(this.cloudU.uWaves, waveU);
     gl.bindVertexArray(this.cloudVao);
-    gl.drawArraysInstanced(gl.TRIANGLES, 0, 3, this.cloudDrawN);
+    gl.drawArrays(gl.POINTS, 0, this.cloudDrawN);
     gl.bindVertexArray(null);
 
-    // — ambient-огоньки —
-    if (this.an > 0) {
-      let q = 0;
-      for (let i = 0; i < this.an; i++) {
-        const dx = Math.sin(this.t * 0.3 + this.aPh[i]) * 0.012;
-        const dy = Math.cos(this.t * 0.24 + this.aPh[i] * 1.3) * 0.012;
-        const tw = 0.7 + 0.3 * Math.sin(this.t * 0.9 + this.aPh[i]);
-        this.ptsArr[q++] = (this.aHome[i * 2] + dx) * this.w;
-        this.ptsArr[q++] = (this.aHome[i * 2 + 1] + dy) * this.h;
-        this.ptsArr[q++] = this.aSz[i];
-        this.ptsArr[q++] = this.aAl[i] * tw * this.introT;
-        this.ptsArr[q++] = this.aCol[i * 3];
-        this.ptsArr[q++] = this.aCol[i * 3 + 1];
-        this.ptsArr[q++] = this.aCol[i * 3 + 2];
-      }
-      gl.useProgram(this.ptsProg);
-      gl.uniform2f(gl.getUniformLocation(this.ptsProg, "uRes"), this.w, this.h);
-      gl.bindVertexArray(this.ptsVao);
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.ptsBuf);
-      gl.bufferData(gl.ARRAY_BUFFER, this.ptsArr.subarray(0, q), gl.DYNAMIC_DRAW);
-      gl.drawArrays(gl.POINTS, 0, q / 7);
-      gl.bindVertexArray(null);
+    // — узлы-нейроны + ambient (яркие точки поверх) —
+    let q = 0;
+    for (let i = 0; i < this.n; i++) {
+      const depth = this.hproj[i * 3 + 2];
+      const df = 0.58 + 0.42 * (depth * 0.5 + 0.5);
+      const tw = 0.78 + 0.22 * Math.sin(this.t * 1.9 + this.ph[i] * 2);
+      // скорость подсвечивает узел — физика видна светом
+      const sp = Math.hypot(this.vel[i * 2], this.vel[i * 2 + 1]);
+      const ex = Math.min(1, sp / 260);
+      this.ptsArr[q++] = this.hproj[i * 3] + this.disp[i * 2];
+      this.ptsArr[q++] = this.hproj[i * 3 + 1] + this.disp[i * 2 + 1];
+      this.ptsArr[q++] = this.nsz[i] * df * (1 + ex * 0.35);
+      this.ptsArr[q++] = Math.min(1, (0.5 + 0.3 * tw) * df * (0.15 + 0.85 * this.introT) * (1 + ex * 0.9));
+      this.ptsArr[q++] = this.col[i * 3];
+      this.ptsArr[q++] = this.col[i * 3 + 1];
+      this.ptsArr[q++] = this.col[i * 3 + 2];
     }
+    for (let i = 0; i < this.an; i++) {
+      const dx = Math.sin(this.t * 0.3 + this.aPh[i]) * 0.012;
+      const dy = Math.cos(this.t * 0.24 + this.aPh[i] * 1.3) * 0.012;
+      const tw = 0.7 + 0.3 * Math.sin(this.t * 0.9 + this.aPh[i]);
+      this.ptsArr[q++] = (this.aHome[i * 2] + dx) * this.w;
+      this.ptsArr[q++] = (this.aHome[i * 2 + 1] + dy) * this.h;
+      this.ptsArr[q++] = this.aSz[i];
+      this.ptsArr[q++] = this.aAl[i] * tw * this.introT;
+      this.ptsArr[q++] = this.aCol[i * 3];
+      this.ptsArr[q++] = this.aCol[i * 3 + 1];
+      this.ptsArr[q++] = this.aCol[i * 3 + 2];
+    }
+    gl.useProgram(this.ptsProg);
+    gl.uniform2f(gl.getUniformLocation(this.ptsProg, "uRes"), this.w, this.h);
+    gl.bindVertexArray(this.ptsVao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.ptsBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, this.ptsArr.subarray(0, q), gl.DYNAMIC_DRAW);
+    gl.drawArrays(gl.POINTS, 0, q / 7);
+    gl.bindVertexArray(null);
   }
 }
