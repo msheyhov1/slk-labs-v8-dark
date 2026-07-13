@@ -20,8 +20,8 @@
   --color-bone-white: #ffffff;   /* заголовки, основной текст */
   --color-ash: #9a9a9a;          /* приглушённый текст, nav, вторичное */
   --color-silver: #bdbdbd;       /* третичный текст, подписи */
-  --color-iris: #8052ff;         /* единственное действие/бренд */
-  --color-iris-bright: #936bff;  /* hover фиолетовой кнопки */
+  --color-iris: #00e08a;         /* единственное действие/бренд (сигнальный зелёный) */
+  --color-iris-bright: #19f29a;  /* hover зелёной кнопки */
   --color-saffron: #ffb829;      /* ярлыки-эмфаза, акцент-пунктуация */
   --color-verdant: #15846e;      /* глубокий стоп бренд-градиента (лого/поле) */
 
@@ -32,8 +32,8 @@
   --color-ink-soft: #f2f2f2;
   --color-ink-2: #9a9a9a;        /* text-ink-2 → ash secondary */
   --color-hairline: rgba(255, 255, 255, 0.08); /* Dala: почти-невидимые линии */
-  --color-signal: #8052ff;       /* signal → iris (акцент/действие) */
-  --color-signal-bright: #936bff;
+  --color-signal: #00e08a;       /* signal → зелёный (акцент/действие) */
+  --color-signal-bright: #19f29a;
   --color-signal-ink: #ffb829;   /* signal-ink → saffron (ярлыки/эмфаза) */
 
   /* — Type (Inter как замена PPNeueMontreal; роли → next/font переменные) — */
@@ -95,7 +95,7 @@
   --color-ink-glass-tile: rgba(255, 255, 255, 0.03);
   --color-hairline-glass: rgba(255, 255, 255, 0.08);
   --color-ink-deep: #050505;
-  --color-signal-rgb: 128 82 255;                  /* iris */
+  --color-signal-rgb: 0 224 138;                   /* сигнальный зелёный */
   --color-saffron-rgb: 255 184 41;
   --color-danger: #e0655c;
 

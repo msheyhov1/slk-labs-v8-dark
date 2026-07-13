@@ -1,16 +1,15 @@
 // Живое поле v8-dark — чистый WebGL2, без three (бюджет JS).
-// Скин v7: сеть узлов-связей (костяной свет на тёмном) + сигнальные
-// «пакеты» по линиям + тяга к курсору. Энсо-штриха в этом варианте НЕТ
-// (решение владельца): сигнатура — сама живая сеть. `reseed` честно
-// пересобирает созвездие (новые «дома» узлов, плавная миграция).
+// Констелляция «Dala»: частицы-ТРЕУГОЛЬНИКИ (резкий контур) + связи +
+// сигнальные «пакеты» по линиям + тяга к курсору. Цвет — сигнальный
+// зелёный (#00E08A) на чёрном. `reseed` пересобирает созвездие.
 //
 // Перф-дисциплина: собственный аккумулятор времени (не wall-clock),
 // пауза на hidden/blur/вне вьюпорта, авто-даунгрейд по замеру FPS.
 
 import { mulberry32 } from "@/lib/seed";
 
-const INK = [0.62, 0.6, 0.72] as const; // холодный бело-лавандовый свет узлов/линий (Dala)
-const RED = [0.502, 0.322, 1.0] as const; // electric-iris #8052ff: пакеты = свет (Dala)
+const INK = [0.16, 0.5, 0.4] as const;    // тёмно-зелёный: узлы/линии в покое
+const RED = [0.0, 0.878, 0.541] as const; // #00E08A сигнальный зелёный: свет/пакеты
 
 const CFG = {
   densityDivisor: 26000, // px² на узел
@@ -20,10 +19,11 @@ const CFG = {
   linkDist: 0.16, // × min(w,h)
   drift: 0.012, // амплитуда дрейфа (× min(w,h))
   pointerR: 0.22, // радиус тяги курсора
-  pointerPull: 0.35,
+  pointerPull: 0.5, // острее: сильнее тянет к курсору
   packetEvery: [0.7, 1.6] as const, // сек между пакетами (случайно)
   packetLife: 0.55,
   lowFps: 45,
+  follow: 4.0, // острее: узлы догоняют цель быстрее (было 3.2)
 };
 
 type Node = {
@@ -31,6 +31,10 @@ type Node = {
   x: number; y: number;
   ph: number; // фаза дрейфа
   sz: number;
+  rot: number; // базовый поворот треугольника
+  spin: number; // медленное вращение (рад/с)
+  heat: number; // яркость (0 тускло-зелёный → 1 сигнальный)
+  alpha: number;
 };
 
 type Packet = { a: number; b: number; t: number };
@@ -156,6 +160,7 @@ export class LivingFieldEngine {
       nd.hx = this.rand();
       nd.hy = this.rand();
       nd.ph = this.rand() * Math.PI * 2;
+      nd.rot = this.rand() * Math.PI * 2;
     }
     this.burst();
     if (this.reduced) {
@@ -185,25 +190,39 @@ export class LivingFieldEngine {
   private initGl() {
     const gl = this.gl;
     const vsPts = `#version 300 es
-      in vec2 aPos; in float aSize; in float aAlpha; in float aHeat;
-      out float vAlpha; out float vHeat;
+      in vec2 aPos; in float aSize; in float aAlpha; in float aHeat; in float aRot;
+      out float vAlpha; out float vHeat; out float vRot;
       void main() {
-        vAlpha = aAlpha; vHeat = aHeat;
+        vAlpha = aAlpha; vHeat = aHeat; vRot = aRot;
         gl_Position = vec4(aPos * 2.0 - 1.0, 0.0, 1.0);
         gl_Position.y = -gl_Position.y;
         gl_PointSize = aSize;
       }`;
+    // Треугольник с РЕЗКИМ контуром (SDF равностороннего) + слабая заливка.
     const fsPts = `#version 300 es
       precision mediump float;
-      in float vAlpha; in float vHeat; out vec4 o;
+      in float vAlpha; in float vHeat; in float vRot; out vec4 o;
       uniform vec3 uInk; uniform vec3 uRed;
+      float sdTri(vec2 p, float r) {
+        const float k = 1.7320508;
+        p.x = abs(p.x) - r;
+        p.y = p.y + r / k;
+        if (p.x + k * p.y > 0.0) p = vec2(p.x - k * p.y, -k * p.x - p.y) * 0.5;
+        p.x -= clamp(p.x, -2.0 * r, 0.0);
+        return -length(p) * sign(p.y);
+      }
       void main() {
         vec2 p = gl_PointCoord * 2.0 - 1.0;
-        float d = dot(p, p);
-        if (d > 1.0) discard;
-        float soft = smoothstep(1.0, 0.55, d);
-        vec3 c = mix(uInk, uRed, vHeat);
-        o = vec4(c, soft * vAlpha);
+        float s = sin(vRot), c = cos(vRot);
+        p = mat2(c, -s, s, c) * p;
+        float d = sdTri(p, 0.86);
+        float aa = fwidth(d) + 0.006;          // резкий, но без алиасинга
+        float fill = 1.0 - smoothstep(0.0, aa, d);
+        float line = 1.0 - smoothstep(aa, aa + 0.16, abs(d)); // острый контур
+        float mask = max(line, fill * 0.30);
+        if (mask < 0.02) discard;
+        vec3 col = mix(uInk, uRed, vHeat);
+        o = vec4(col, mask * vAlpha);
       }`;
     const vsLin = `#version 300 es
       in vec2 aPos; in float aAlpha; in float aHeat;
@@ -271,10 +290,14 @@ export class LivingFieldEngine {
       this.nodes.push({
         hx, hy, x: hx, y: hy,
         ph: this.rand() * Math.PI * 2,
-        sz: (1.6 + this.rand() * 2.2) * this.dpr,
+        sz: (6 + this.rand() * 7) * this.dpr, // крупнее — чтобы читались треугольники
+        rot: this.rand() * Math.PI * 2,
+        spin: (this.rand() - 0.5) * 0.5, // медленное вращение
+        heat: 0.22 + this.rand() * 0.5, // разброс яркости — «точки-огоньки»
+        alpha: 0.55 + this.rand() * 0.4,
       });
     }
-    this.ptsArr = new Float32Array(n * 5);
+    this.ptsArr = new Float32Array(n * 6);
   }
 
   // ---------- пакеты ----------
@@ -352,8 +375,8 @@ export class LivingFieldEngine {
         }
       }
 
-      nd.x += (tx - nd.x) * Math.min(1, dt * 3.2);
-      nd.y += (ty - nd.y) * Math.min(1, dt * 3.2);
+      nd.x += (tx - nd.x) * Math.min(1, dt * CFG.follow);
+      nd.y += (ty - nd.y) * Math.min(1, dt * CFG.follow);
     }
 
     // связи по дистанции
@@ -415,7 +438,7 @@ export class LivingFieldEngine {
       const ddx = (a.x - b.x) * this.w;
       const ddy = (a.y - b.y) * this.h;
       const d = Math.sqrt(ddx * ddx + ddy * ddy);
-      const al = (1 - d / maxD) * 0.22;
+      const al = (1 - d / maxD) * 0.2;
       this.linArr[o++] = a.x; this.linArr[o++] = a.y; this.linArr[o++] = al; this.linArr[o++] = 0;
       this.linArr[o++] = b.x; this.linArr[o++] = b.y; this.linArr[o++] = al; this.linArr[o++] = 0;
     }
@@ -444,24 +467,26 @@ export class LivingFieldEngine {
     this.uniform3(this.linProg, "uRed", RED);
     gl.drawArrays(gl.LINES, 0, lineVerts);
 
-    // — узлы —
+    // — узлы (треугольники) —
     const n = this.nodes.length;
-    if (this.ptsArr.length < n * 5) this.ptsArr = new Float32Array(n * 5);
+    if (this.ptsArr.length < n * 6) this.ptsArr = new Float32Array(n * 6);
     let q = 0;
     for (const nd of this.nodes) {
       this.ptsArr[q++] = nd.x;
       this.ptsArr[q++] = nd.y;
       this.ptsArr[q++] = nd.sz;
-      this.ptsArr[q++] = 0.6;
-      this.ptsArr[q++] = 0;
+      this.ptsArr[q++] = nd.alpha;
+      this.ptsArr[q++] = nd.heat;
+      this.ptsArr[q++] = nd.rot + this.t * nd.spin;
     }
     gl.useProgram(this.ptsProg);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.ptsBuf);
     gl.bufferData(gl.ARRAY_BUFFER, this.ptsArr.subarray(0, q), gl.DYNAMIC_DRAW);
-    this.attrib(this.ptsProg, "aPos", 2, 20, 0);
-    this.attrib(this.ptsProg, "aSize", 1, 20, 8);
-    this.attrib(this.ptsProg, "aAlpha", 1, 20, 12);
-    this.attrib(this.ptsProg, "aHeat", 1, 20, 16);
+    this.attrib(this.ptsProg, "aPos", 2, 24, 0);
+    this.attrib(this.ptsProg, "aSize", 1, 24, 8);
+    this.attrib(this.ptsProg, "aAlpha", 1, 24, 12);
+    this.attrib(this.ptsProg, "aHeat", 1, 24, 16);
+    this.attrib(this.ptsProg, "aRot", 1, 24, 20);
     this.uniform3(this.ptsProg, "uInk", INK);
     this.uniform3(this.ptsProg, "uRed", RED);
     gl.drawArrays(gl.POINTS, 0, n);

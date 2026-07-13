@@ -31,7 +31,7 @@ h1, h2, h3, h4 {
   font-weight: var(--weight-regular);
 }
 
-::selection { background: var(--color-iris); color: var(--color-bone-white); }
+::selection { background: var(--color-iris); color: #04140d; }
 
 *:focus-visible {
   outline: 2px solid var(--color-iris);
@@ -98,7 +98,7 @@ html.js [data-reveal] { opacity: 0; }
    ============================================================ */
 .hanko {
   background: var(--color-iris);
-  color: var(--color-bone-white);
+  color: #04140d; /* тёмный текст на ярком зелёном (контраст ~10:1) */
   border-radius: 9999px;
   transition: background var(--dur-micro) var(--ease-standard),
     transform var(--dur-micro) var(--ease-standard);
