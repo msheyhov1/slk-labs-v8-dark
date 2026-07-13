@@ -5,8 +5,9 @@
 // Ракурс зафиксирован (лёгкое покачивание) — силуэт мозга читается всегда.
 // Палитра сдержанная: бело-лавандовый свет + фиолет/синий, редкие искры.
 //
-// Взаимодействие: курсор зажигает и притягивает ближние частицы, движение
-// мыши рождает импульсы в ближних синапсах, клик — всплеск.
+// Взаимодействие: курсор РАСТАЛКИВАЕТ частицы (мозг раскрывается) и
+// зажигает ближние; пока курсор над мозгом — мозг слегка расширяется;
+// движение мыши рождает импульсы в ближних синапсах, клик — всплеск.
 //
 // Перф-дисциплина: связи считаются ОДИН раз при посеве (k-ближайших в 3D),
 // per-frame — только O(n) проекция; пауза на hidden/blur/вне вьюпорта,
@@ -33,17 +34,18 @@ const CFG = {
   kNear: 3, // связей на частицу (k-ближайших) — видимая сеть
   maxLink3d: 0.3, // предел длины связи (3D-юниты мозга)
   yawBase: -0.12, // базовый ракурс (почти профиль)
-  yawAmp: 0.3, // покачивание вместо вращения — мозг читается всегда
-  yawSpeed: 0.22,
-  pitchAmp: 0.055,
-  breathAmp: 0.024, // «дыхание» масштаба
-  pointerR: 0.27, // радиус влияния курсора (× min(w,h))
-  pointerPull: 150, // сила тяги (px/с на пике)
-  moveSpawnPx: 46, // каждые N px пути мыши — импульс из ближнего синапса
-  packetEvery: [0.12, 0.35] as const, // сек между фоновыми импульсами
+  yawAmp: 0.34, // покачивание вместо вращения — мозг читается всегда
+  yawSpeed: 0.26,
+  pitchAmp: 0.07,
+  breathAmp: 0.035, // «дыхание» масштаба (живее)
+  hoverGrow: 0.055, // мозг РАСШИРЯЕТСЯ, пока курсор над ним
+  pointerR: 0.3, // радиус влияния курсора (× min(w,h))
+  pointerPush: 130, // сила расталкивания (px/с на пике) — мозг раскрывается
+  moveSpawnPx: 30, // каждые N px пути мыши — импульс из ближнего синапса
+  packetEvery: [0.08, 0.25] as const, // сек между фоновыми импульсами
   packetLife: 0.36, // сек на пролёт импульса по связи
-  chainP: 0.72, // вероятность продолжить цепочку в следующем синапсе
-  maxPackets: 42,
+  chainP: 0.78, // вероятность продолжить цепочку в следующем синапсе
+  maxPackets: 56,
   lowFps: 45,
 };
 
@@ -115,6 +117,7 @@ export class LivingFieldEngine {
   private moveAcc = 0; // накопленный путь мыши → импульсы
   private parX = 0; // параллакс центра мозга
   private parY = 0;
+  private hoverAmt = 0; // 0→1 когда курсор над мозгом (расширение)
   private disposed = false;
   private cleanupFns: Array<() => void> = [];
 
@@ -580,6 +583,14 @@ export class LivingFieldEngine {
     const cx = cx0 + this.parX;
     const cy = cy0 + this.parY;
 
+    // курсор рядом с мозгом → мозг раскрывается (плавный набор/спад)
+    if (dt > 0) {
+      const near =
+        this.pointer.active &&
+        Math.hypot(this.pointer.x - cx, this.pointer.y - cy) < R * 1.35;
+      this.hoverAmt += ((near ? 1 : 0) - this.hoverAmt) * Math.min(1, dt * 3);
+    }
+
     // миграция домов при reseed
     if (dt > 0) {
       const f = Math.min(1, dt * 2.2);
@@ -590,8 +601,9 @@ export class LivingFieldEngine {
 
     // ракурс: профиль + мягкое покачивание (НЕ полное вращение) + дыхание
     const yaw = CFG.yawBase + Math.sin(this.t * CFG.yawSpeed) * CFG.yawAmp;
-    const pitch = Math.sin(this.t * 0.31) * CFG.pitchAmp;
-    const breath = 1 + Math.sin(this.t * 0.7) * CFG.breathAmp;
+    const pitch = Math.sin(this.t * 0.4) * CFG.pitchAmp;
+    const breath =
+      (1 + Math.sin(this.t * 0.9) * CFG.breathAmp) * (1 + this.hoverAmt * CFG.hoverGrow);
     const cyw = Math.cos(yaw), syw = Math.sin(yaw);
     const cpt = Math.cos(pitch), spt = Math.sin(pitch);
 
@@ -602,7 +614,7 @@ export class LivingFieldEngine {
       const z1 = -hx * syw + hz * cyw;
       const y1 = hy * cpt - z1 * spt;
       const z2 = hy * spt + z1 * cpt;
-      const jit = Math.sin(this.t * 1.1 + this.ph[i]) * 0.006;
+      const jit = Math.sin(this.t * 1.6 + this.ph[i]) * 0.01;
       const persp = 1 + z2 * 0.14;
       this.proj[i * 3] = cx + (x1 + jit) * R * breath * persp + this.off[i * 2];
       this.proj[i * 3 + 1] = cy + (y1 + jit * 0.8) * R * breath * persp + this.off[i * 2 + 1];
@@ -612,7 +624,7 @@ export class LivingFieldEngine {
     // курсор: заметная тяга ближних частиц (и пружина обратно)
     const Rp = CFG.pointerR * m;
     if (dt > 0) {
-      const decay = Math.max(0, 1 - 3.0 * dt);
+      const decay = Math.max(0, 1 - 2.4 * dt);
       for (let i = 0; i < this.n; i++) {
         let ox = this.off[i * 2] * decay;
         let oy = this.off[i * 2 + 1] * decay;
@@ -621,9 +633,10 @@ export class LivingFieldEngine {
           const dy = this.pointer.y - this.proj[i * 3 + 1];
           const d = Math.hypot(dx, dy);
           if (d < Rp && d > 1) {
-            const f = (1 - d / Rp) * CFG.pointerPull * dt;
-            ox += (dx / d) * f;
-            oy += (dy / d) * f;
+            // расталкивание: мозг раскрывается вокруг курсора
+            const f = (1 - d / Rp) * CFG.pointerPush * dt;
+            ox -= (dx / d) * f;
+            oy -= (dy / d) * f;
           }
         }
         this.off[i * 2] = ox;
@@ -641,7 +654,8 @@ export class LivingFieldEngine {
       if (this.nextPacket <= 0) {
         this.spawnPacket();
         const [lo, hi] = CFG.packetEvery;
-        this.nextPacket = (lo + this.rand() * (hi - lo)) * (this.degraded ? 2 : 1);
+        this.nextPacket =
+          (lo + this.rand() * (hi - lo)) * (this.degraded ? 2 : 1) * (1 - this.hoverAmt * 0.4);
       }
       for (let i = this.packets.length - 1; i >= 0; i--) {
         const p = this.packets[i];
@@ -712,7 +726,10 @@ export class LivingFieldEngine {
     for (let i = 0; i < this.n; i++) {
       const depth = this.proj[i * 3 + 2];
       const df = 0.58 + 0.42 * (depth * 0.5 + 0.5); // дальние тусклее/меньше
-      const tw = 0.8 + 0.2 * Math.sin(this.t * 1.7 + this.ph[i] * 2); // мерцание
+      const tw = 0.75 + 0.25 * Math.sin(this.t * 2.2 + this.ph[i] * 2); // мерцание
+      // волна активности медленно прокатывается по коре
+      const wv0 = Math.sin(this.t * 0.9 - (this.home[i * 3] * 2.0 + this.home[i * 3 + 1] * 1.2));
+      const wv = 1 + (wv0 > 0 ? wv0 * wv0 : 0) * 0.3;
       // курсор «зажигает» ближние частицы
       let ex = 0;
       if (pActive) {
@@ -724,7 +741,7 @@ export class LivingFieldEngine {
       this.ptsArr[q++] = this.proj[i * 3];
       this.ptsArr[q++] = this.proj[i * 3 + 1];
       this.ptsArr[q++] = this.sz[i] * df * (1 + ex * 0.5);
-      this.ptsArr[q++] = Math.min(1, this.al[i] * df * tw * (1 + ex * 1.1));
+      this.ptsArr[q++] = Math.min(1, this.al[i] * df * tw * wv * (1 + ex * 1.1));
       this.ptsArr[q++] = this.col[i * 3];
       this.ptsArr[q++] = this.col[i * 3 + 1];
       this.ptsArr[q++] = this.col[i * 3 + 2];
